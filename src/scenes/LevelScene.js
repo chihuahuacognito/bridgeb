@@ -2,6 +2,9 @@
 import Phaser from 'phaser';
 import { ALL_LEVELS } from '../data/leveldata.js';
 import physics from '../systems/physics.js';
+import audio from '../systems/audio.js';
+import juice from '../systems/juice.js';
+import cam from '../systems/camera.js';
 
 export class LevelScene extends Phaser.Scene {
   constructor() {
@@ -41,7 +44,19 @@ export class LevelScene extends Phaser.Scene {
       if (dataJoint) dataJoint.bodyId = a.id;
     }
 
-    physics.setOnSnap(() => this.onBeamSnapped());
+    audio.attach(this);
+    juice.attach(this);
+    cam.attach(this);
+
+    physics.setOnSnap((c) => {
+      juice.onSnap(this.time.now);
+      // Punch-in on the snap midpoint
+      const mx = (c.bodyA.position.x + c.bodyB.position.x) / 2;
+      const my = (c.bodyA.position.y + c.bodyB.position.y) / 2;
+      cam.punchIn(mx, my, this.time.now);
+      audio.stopCreak(c);
+      this.onBeamSnapped();
+    });
     this.winOverlay = null;
     this.failOverlay = null;
 
@@ -57,7 +72,12 @@ export class LevelScene extends Phaser.Scene {
     // Start paused: pause Matter until the player hits TEST.
     physics.setRunnerEnabled(false);
 
-    this.events.on('shutdown', () => physics.detach(this));
+    this.events.on('shutdown', () => {
+      physics.detach(this);
+      audio.detach(this);
+      juice.detach(this);
+      cam.detach(this);
+    });
   }
 
   drawSky() {
@@ -165,11 +185,26 @@ export class LevelScene extends Phaser.Scene {
     for (const { constraint } of physics._beamConstraints) {
       const stress = physics.readStressSmoothed(constraint);
       const color = this.stressColor(stress);
-      const thickness = 6 + stress * 2;  // shimmer: 6 → 8 px
+      const thickness = 6 + stress * 2;
+
+      let aX = constraint.bodyA.position.x, aY = constraint.bodyA.position.y;
+      let bX = constraint.bodyB.position.x, bY = constraint.bodyB.position.y;
+      if (stress > 0.85) {
+        const t = this.time.now / 1000;
+        const freq = 10; // 10 Hz, spec range 8-12
+        const amp = 1.5; // px
+        const perp = { x: -(bY - aY), y: (bX - aX) };
+        const pm = Math.hypot(perp.x, perp.y) || 1;
+        perp.x /= pm; perp.y /= pm;
+        const wobble = Math.sin(t * 2 * Math.PI * freq) * amp;
+        aX += perp.x * wobble; aY += perp.y * wobble;
+        bX += perp.x * wobble; bY += perp.y * wobble;
+      }
+
       this.beamsGraphics.lineStyle(thickness, color, 1);
       this.beamsGraphics.beginPath();
-      this.beamsGraphics.moveTo(constraint.bodyA.position.x, constraint.bodyA.position.y);
-      this.beamsGraphics.lineTo(constraint.bodyB.position.x, constraint.bodyB.position.y);
+      this.beamsGraphics.moveTo(aX, aY);
+      this.beamsGraphics.lineTo(bX, bY);
       this.beamsGraphics.strokePath();
       if (stress > 0.5) this.drawStressGlow(constraint, stress, color);
     }
@@ -210,6 +245,7 @@ export class LevelScene extends Phaser.Scene {
       physics.setRunnerEnabled(true);   // start simulating
       const vehicleConfig = this.level.vehicles[0]; // spec §2 rule 3: always an array
       physics.spawnVehicle(vehicleConfig);
+      cam.follow(() => physics.getVehicleChassisPosition());
       this.vehicleGraphics = this.add.graphics();
     } else {
       physics.softRestart();
@@ -228,9 +264,21 @@ export class LevelScene extends Phaser.Scene {
       physics.tickWatchdog();
       physics.driveVehicle();
       physics.evaluateStress(this.time.now, physics.getTimeScale());
+      juice.tick(this.time.now, physics.isCascadeActive(this.time.now));
+      cam.tick(this.time.now);
+      this.updateCreakAudio();
       this.redrawBeamsFromBodies();
       this.redrawVehicle();
       this.checkWin();
+    }
+  }
+
+  updateCreakAudio() {
+    for (const { constraint } of physics._beamConstraints) {
+      const stress = physics.readStressSmoothed(constraint);
+      if (stress > 0.85) audio.startCreak(constraint, stress);
+      else audio.stopCreak(constraint);
+      audio.updateCreak(constraint, stress);
     }
   }
 
