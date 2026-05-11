@@ -110,7 +110,10 @@ const physics = {
   // ---- Seam-rule wrappers (the ONLY way scene/system code touches the engine) ----
 
   setRunnerEnabled(enabled) {
-    if (this._scene) this._scene.matter.world.runner.enabled = enabled;
+    if (this._scene) {
+      this._scene.matter.world.enabled = enabled;
+      this._scene.matter.world.runner.enabled = enabled; // belt-and-suspenders; safe and harmless
+    }
   },
 
   getTimeScale() {
