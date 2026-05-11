@@ -17,6 +17,14 @@ export class LevelScene extends Phaser.Scene {
     this.drawCanyon();
     this.drawWater();
     this.drawAnchors();
+
+    this.beams = [];               // [{ a: {x,y}, b: {x,y} }]
+    this.pendingJointA = null;     // first click waiting for second
+    this.beamsGraphics = this.add.graphics();
+    this.ghostGraphics = this.add.graphics();
+
+    this.input.on('pointerdown', (pointer) => this.handleClick(pointer));
+    this.input.on('pointermove', (pointer) => this.handleHover(pointer));
   }
 
   drawSky() {
@@ -48,6 +56,39 @@ export class LevelScene extends Phaser.Scene {
       g.fillCircle(a.x, a.y, 12);
       g.lineStyle(2, 0xffffff, 0.9);
       g.strokeCircle(a.x, a.y, 16);
+    }
+  }
+
+  handleClick(pointer) {
+    const p = { x: pointer.worldX, y: pointer.worldY };
+    if (!this.pendingJointA) {
+      this.pendingJointA = p;
+    } else {
+      this.beams.push({ a: this.pendingJointA, b: p });
+      this.pendingJointA = null;
+      this.redrawBeams();
+    }
+  }
+
+  handleHover(pointer) {
+    this.ghostGraphics.clear();
+    if (this.pendingJointA) {
+      this.ghostGraphics.lineStyle(4, 0x9b6b3a, 0.4);
+      this.ghostGraphics.beginPath();
+      this.ghostGraphics.moveTo(this.pendingJointA.x, this.pendingJointA.y);
+      this.ghostGraphics.lineTo(pointer.worldX, pointer.worldY);
+      this.ghostGraphics.strokePath();
+    }
+  }
+
+  redrawBeams() {
+    this.beamsGraphics.clear();
+    this.beamsGraphics.lineStyle(6, 0x9b6b3a, 1); // wood brown
+    for (const beam of this.beams) {
+      this.beamsGraphics.beginPath();
+      this.beamsGraphics.moveTo(beam.a.x, beam.a.y);
+      this.beamsGraphics.lineTo(beam.b.x, beam.b.y);
+      this.beamsGraphics.strokePath();
     }
   }
 }
