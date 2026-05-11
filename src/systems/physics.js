@@ -9,6 +9,10 @@ const physics = {
   _nodes: new Map(),       // jointId -> Matter.Body (small circle)
   _beamConstraints: [],    // [{ constraint, material }]
   _bodySnapshots: new Map(),
+  _pendingSnaps: [],
+  _lastStaggerAt: 0,
+  _cascadeActiveUntil: 0,
+  _onSnapCallback: null,
 
   attach(scene) {
     this._scene = scene;
@@ -204,6 +208,56 @@ const physics = {
     let sum = 0;
     for (const s of c._stressHistory) sum += s;
     return sum / c._stressHistory.length;
+  },
+
+  setOnSnap(cb) { this._onSnapCallback = cb; },
+
+  // Called once per tick (from LevelScene.update during test mode).
+  evaluateStress(nowMs, timeScale = 1.0) {
+    const STAGGER_MS = 100;
+    const SETTLE_MS  = 200;
+
+    // 1. READ-ONLY pass — collect candidates
+    for (const { constraint } of this._beamConstraints) {
+      const s = this.readStressSmoothed(constraint);
+      if (s >= 1.0 && !this._pendingSnaps.includes(constraint)) {
+        this._pendingSnaps.push(constraint);
+      }
+    }
+
+    // 2. Sort highest-stress first
+    this._pendingSnaps.sort((a, b) =>
+      this.readStressNormalized(b) - this.readStressNormalized(a)
+    );
+
+    // 3. Process one snap per stagger-tick (scaled by timeScale)
+    const stagger = STAGGER_MS / Math.max(timeScale, 0.05);
+    if (this._pendingSnaps.length > 0 && nowMs - this._lastStaggerAt >= stagger) {
+      const head = this._pendingSnaps.shift();
+      this.removeBeam(head);
+      this._lastStaggerAt = nowMs;
+      this._cascadeActiveUntil = nowMs + SETTLE_MS;
+      if (this._onSnapCallback) this._onSnapCallback(head);
+
+      // Re-evaluate neighbours (topological — share an endpoint with head)
+      let added = 0;
+      for (const { constraint } of this._beamConstraints) {
+        if (added >= 5) break; // runaway-cascade guard (spec §3.7 step 4)
+        const sharesEndpoint =
+          constraint.bodyA === head.bodyA || constraint.bodyA === head.bodyB ||
+          constraint.bodyB === head.bodyA || constraint.bodyB === head.bodyB;
+        if (!sharesEndpoint) continue;
+        const s = this.readStressNormalized(constraint);
+        if (s >= 1.0 && !this._pendingSnaps.includes(constraint)) {
+          this._pendingSnaps.push(constraint);
+          added++;
+        }
+      }
+    }
+  },
+
+  isCascadeActive(nowMs) {
+    return this._pendingSnaps.length > 0 || nowMs < this._cascadeActiveUntil;
   },
 };
 

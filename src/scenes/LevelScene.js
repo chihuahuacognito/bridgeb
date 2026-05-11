@@ -41,6 +41,10 @@ export class LevelScene extends Phaser.Scene {
       if (dataJoint) dataJoint.bodyId = a.id;
     }
 
+    physics.setOnSnap(() => this.onBeamSnapped());
+    this.winOverlay = null;
+    this.failOverlay = null;
+
     this.mode = 'build';                 // 'build' | 'test'
     this.material = this.level.materials.wood;
     this.beamConstraints = [];           // mirrors physics._beamConstraints, for rendering
@@ -214,6 +218,8 @@ export class LevelScene extends Phaser.Scene {
       physics.setRunnerEnabled(false);
       this.redrawBeams();
       this.vehicleGraphics?.clear();
+      this.winOverlay?.destroy(); this.winOverlay = null;
+      this.failOverlay?.destroy(); this.failOverlay = null;
     }
   }
 
@@ -221,8 +227,34 @@ export class LevelScene extends Phaser.Scene {
     if (this.mode === 'test') {
       physics.tickWatchdog();
       physics.driveVehicle();
+      physics.evaluateStress(this.time.now, physics.getTimeScale());
       this.redrawBeamsFromBodies();
       this.redrawVehicle();
+      this.checkWin();
+    }
+  }
+
+  onBeamSnapped() {
+    // Task 8.5 will trigger slow-mo here; for now just register the fail.
+    if (!this.failOverlay) this.showFail();
+  }
+
+  showFail() {
+    this.failOverlay = this.add.text(640, 360, 'BRIDGE FAILED',
+      { fontSize: '64px', color: '#ff3333', fontStyle: 'bold' }).setOrigin(0.5);
+  }
+
+  showWin() {
+    this.winOverlay = this.add.text(640, 360, 'BRIDGE HOLDS',
+      { fontSize: '64px', color: '#33cc33', fontStyle: 'bold' }).setOrigin(0.5);
+  }
+
+  checkWin() {
+    const pos = physics.getVehicleChassisPosition();
+    if (!pos) return;
+    const rightAnchor = this.level.anchors.find(a => a.side === 'right');
+    if (pos.x >= rightAnchor.x - 20 && !this.winOverlay && !this.failOverlay) {
+      this.showWin();
     }
   }
 
