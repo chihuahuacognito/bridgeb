@@ -1,6 +1,7 @@
 // src/scenes/LevelScene.js
 import Phaser from 'phaser';
 import { ALL_LEVELS } from '../data/leveldata.js';
+import physics from '../systems/physics.js';
 
 export class LevelScene extends Phaser.Scene {
   constructor() {
@@ -10,6 +11,10 @@ export class LevelScene extends Phaser.Scene {
   init(data) {
     this.levelId = data.levelId || 'L1';
     this.level = ALL_LEVELS[this.levelId];
+    this.beams = [];
+    this.pendingJointA = null;
+    this.joints = this.level.anchors.map(a => ({ x: a.x, y: a.y, isAnchor: true, bodyId: a.id }));
+    this.SNAP_RADIUS = 20;
   }
 
   create() {
@@ -18,18 +23,37 @@ export class LevelScene extends Phaser.Scene {
     this.drawWater();
     this.drawAnchors();
 
-    this.beams = [];               // [{ a: {x,y}, b: {x,y} }]
-    this.pendingJointA = null;     // first click waiting for second
     this.beamsGraphics = this.add.graphics();
     this.ghostGraphics = this.add.graphics();
+    this.snapGraphics = this.add.graphics();
+    this.snapTarget = null;
 
     this.input.on('pointerdown', (pointer) => this.handleClick(pointer));
     this.input.on('pointermove', (pointer) => this.handleHover(pointer));
 
-    this.SNAP_RADIUS = 20;
-    this.joints = this.level.anchors.map(a => ({ x: a.x, y: a.y, isAnchor: true }));
-    this.snapTarget = null;
-    this.snapGraphics = this.add.graphics();
+    physics.attach(this);
+
+    // Create anchor bodies and add them to the joints registry by id.
+    for (const a of this.level.anchors) {
+      physics.ensureJointNode(a.id, a.x, a.y, /* isAnchor */ true);
+      // Match data joint to physics body for snap-back resolution.
+      const dataJoint = this.joints.find(j => j.x === a.x && j.y === a.y);
+      if (dataJoint) dataJoint.bodyId = a.id;
+    }
+
+    this.mode = 'build';                 // 'build' | 'test'
+    this.material = this.level.materials.wood;
+    this.beamConstraints = [];           // mirrors physics._beamConstraints, for rendering
+
+    // Test/Reset button overlay
+    this.testButton = this.add.rectangle(640, 40, 200, 50, 0x2e7d32).setInteractive();
+    this.testButtonLabel = this.add.text(640, 40, 'TEST', { fontSize: '20px', color: '#fff' }).setOrigin(0.5);
+    this.testButton.on('pointerdown', () => this.toggleTest());
+
+    // Start paused: pause Matter until the player hits TEST.
+    physics.setRunnerEnabled(false);
+
+    this.events.on('shutdown', () => physics.detach(this));
   }
 
   drawSky() {
@@ -77,22 +101,29 @@ export class LevelScene extends Phaser.Scene {
   }
 
   handleClick(pointer) {
+    if (this.mode !== 'build') return;
     const raw = { x: pointer.worldX, y: pointer.worldY };
     const snap = this.findNearestJoint(raw);
-    const p = snap ? { x: snap.x, y: snap.y } : raw;
+    const p = snap ? { x: snap.x, y: snap.y, bodyId: snap.bodyId } : raw;
 
     if (!this.pendingJointA) {
-      this.pendingJointA = p;
+      this.pendingJointA = p.bodyId ? p : this.registerNewJoint(p);
     } else {
-      // Add the endpoint as a joint if it's a new position.
-      if (!snap) this.joints.push({ x: p.x, y: p.y, isAnchor: false });
-      if (!this.joints.find(j => j.x === this.pendingJointA.x && j.y === this.pendingJointA.y)) {
-        this.joints.push({ ...this.pendingJointA, isAnchor: false });
-      }
-      this.beams.push({ a: this.pendingJointA, b: p });
+      const endpoint = p.bodyId ? p : this.registerNewJoint(p);
+      const matA = physics._nodes.get(this.pendingJointA.bodyId);
+      const matB = physics._nodes.get(endpoint.bodyId);
+      physics.buildBeam(matA, matB, this.material);
+      this.beams.push({ a: this.pendingJointA, b: endpoint });
       this.pendingJointA = null;
       this.redrawBeams();
     }
+  }
+
+  registerNewJoint(p) {
+    const id = 'j' + (this.joints.length + 1);
+    this.joints.push({ x: p.x, y: p.y, isAnchor: false, bodyId: id });
+    physics.ensureJointNode(id, p.x, p.y, /* isAnchor */ false);
+    return { x: p.x, y: p.y, bodyId: id };
   }
 
   handleHover(pointer) {
@@ -122,6 +153,40 @@ export class LevelScene extends Phaser.Scene {
       this.beamsGraphics.moveTo(beam.a.x, beam.a.y);
       this.beamsGraphics.lineTo(beam.b.x, beam.b.y);
       this.beamsGraphics.strokePath();
+    }
+  }
+
+  redrawBeamsFromBodies() {
+    this.beamsGraphics.clear();
+    this.beamsGraphics.lineStyle(6, 0x9b6b3a, 1);
+    for (const { constraint } of physics._beamConstraints) {
+      this.beamsGraphics.beginPath();
+      this.beamsGraphics.moveTo(constraint.bodyA.position.x, constraint.bodyA.position.y);
+      this.beamsGraphics.lineTo(constraint.bodyB.position.x, constraint.bodyB.position.y);
+      this.beamsGraphics.strokePath();
+    }
+  }
+
+  toggleTest() {
+    if (this.mode === 'build') {
+      physics.captureSnapshot();
+      this.mode = 'test';
+      this.testButtonLabel.setText('RESET');
+      physics.setTimeScale(1.0);
+      physics.setRunnerEnabled(true);   // start simulating
+    } else {
+      physics.softRestart();
+      this.mode = 'build';
+      this.testButtonLabel.setText('TEST');
+      physics.setRunnerEnabled(false);
+      this.redrawBeams();
+    }
+  }
+
+  update() {
+    if (this.mode === 'test') {
+      physics.tickWatchdog();
+      this.redrawBeamsFromBodies();
     }
   }
 }
