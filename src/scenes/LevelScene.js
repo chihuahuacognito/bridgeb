@@ -174,19 +174,41 @@ export class LevelScene extends Phaser.Scene {
       this.testButtonLabel.setText('RESET');
       physics.setTimeScale(1.0);
       physics.setRunnerEnabled(true);   // start simulating
+      const vehicleConfig = this.level.vehicles[0]; // spec §2 rule 3: always an array
+      physics.spawnVehicle(vehicleConfig);
+      this.vehicleGraphics = this.add.graphics();
     } else {
       physics.softRestart();
       this.mode = 'build';
       this.testButtonLabel.setText('TEST');
       physics.setRunnerEnabled(false);
       this.redrawBeams();
+      this.vehicleGraphics?.clear();
     }
   }
 
   update() {
     if (this.mode === 'test') {
       physics.tickWatchdog();
+      physics.driveVehicle();
       this.redrawBeamsFromBodies();
+      this.redrawVehicle();
+    }
+  }
+
+  redrawVehicle() {
+    if (!this.vehicleGraphics) return;
+    this.vehicleGraphics.clear();
+    const v = physics._vehicle;
+    if (!v) return;
+    const c = v.chassis;
+    this.vehicleGraphics.fillStyle(0xf08c1a, 1);
+    this.vehicleGraphics.fillRect(c.position.x - 40, c.position.y - 12, 80, 24);
+    this.vehicleGraphics.lineStyle(2, 0x331a00, 1);
+    this.vehicleGraphics.strokeRect(c.position.x - 40, c.position.y - 12, 80, 24);
+    this.vehicleGraphics.fillStyle(0x222222, 1);
+    for (const w of v.wheels) {
+      this.vehicleGraphics.fillCircle(w.position.x, w.position.y, 12);
     }
   }
 }

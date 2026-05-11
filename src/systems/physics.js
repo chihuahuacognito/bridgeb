@@ -137,6 +137,51 @@ const physics = {
   setTimeScale(scale) {
     if (this._scene) this._scene.matter.world.engine.timing.timeScale = scale;
   },
+
+  spawnVehicle(config) {
+    if (!this._scene) return null;
+    const { spawnAt, weight } = config;
+    const spawnX = spawnAt === 'left' ? 200 : 1080;
+    const spawnY = 340;
+
+    // Chassis
+    const chassis = this._scene.matter.add.rectangle(spawnX, spawnY, 80, 24, {
+      label: 'vehicle-chassis',
+      collisionFilter: { category: 0x0001, mask: 0xFFFF & ~0x0002 }, // collide with all but BRIDGE
+      density: weight / (80 * 24 * 100), // tune by feel; spec §7.3 deferred
+    });
+
+    // Two wheels with low-stiffness suspension constraints (spec §3.1, §7.3)
+    const wheelOffsets = [{ dx: -28, dy: 14 }, { dx: 28, dy: 14 }];
+    const wheels = [];
+    for (const off of wheelOffsets) {
+      const wheel = this._scene.matter.add.circle(spawnX + off.dx, spawnY + off.dy, 12, {
+        label: 'vehicle-wheel',
+        friction: 0.95,
+        density: 0.05,
+      });
+      this._scene.matter.add.constraint(chassis, wheel,
+        Math.hypot(off.dx, off.dy), 0.5, { damping: 0.2 }); // stiffness 0.5 per spec §7.3
+      wheels.push(wheel);
+    }
+
+    this._vehicle = { chassis, wheels, config };
+    return this._vehicle;
+  },
+
+  driveVehicle() {
+    if (!this._vehicle) return;
+    const force = this._vehicle.config.spawnAt === 'left' ? 0.02 : -0.02;
+    this._scene.matter.body.applyForce(
+      this._vehicle.chassis,
+      this._vehicle.chassis.position,
+      { x: force, y: 0 }
+    );
+  },
+
+  getVehicleChassisPosition() {
+    return this._vehicle ? this._vehicle.chassis.position : null;
+  },
 };
 
 // Named exports for testability — tests import the SAME formula impls
