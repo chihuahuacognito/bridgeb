@@ -25,6 +25,11 @@ export class LevelScene extends Phaser.Scene {
 
     this.input.on('pointerdown', (pointer) => this.handleClick(pointer));
     this.input.on('pointermove', (pointer) => this.handleHover(pointer));
+
+    this.SNAP_RADIUS = 20;
+    this.joints = this.level.anchors.map(a => ({ x: a.x, y: a.y, isAnchor: true }));
+    this.snapTarget = null;
+    this.snapGraphics = this.add.graphics();
   }
 
   drawSky() {
@@ -59,11 +64,31 @@ export class LevelScene extends Phaser.Scene {
     }
   }
 
+  findNearestJoint(p) {
+    let best = null;
+    let bestDist = this.SNAP_RADIUS;
+    for (const j of this.joints) {
+      const dx = j.x - p.x;
+      const dy = j.y - p.y;
+      const d = Math.hypot(dx, dy);
+      if (d < bestDist) { bestDist = d; best = j; }
+    }
+    return best;
+  }
+
   handleClick(pointer) {
-    const p = { x: pointer.worldX, y: pointer.worldY };
+    const raw = { x: pointer.worldX, y: pointer.worldY };
+    const snap = this.findNearestJoint(raw);
+    const p = snap ? { x: snap.x, y: snap.y } : raw;
+
     if (!this.pendingJointA) {
       this.pendingJointA = p;
     } else {
+      // Add the endpoint as a joint if it's a new position.
+      if (!snap) this.joints.push({ x: p.x, y: p.y, isAnchor: false });
+      if (!this.joints.find(j => j.x === this.pendingJointA.x && j.y === this.pendingJointA.y)) {
+        this.joints.push({ ...this.pendingJointA, isAnchor: false });
+      }
       this.beams.push({ a: this.pendingJointA, b: p });
       this.pendingJointA = null;
       this.redrawBeams();
@@ -72,11 +97,19 @@ export class LevelScene extends Phaser.Scene {
 
   handleHover(pointer) {
     this.ghostGraphics.clear();
+    this.snapGraphics.clear();
+    const raw = { x: pointer.worldX, y: pointer.worldY };
+    const snap = this.findNearestJoint(raw);
+    if (snap) {
+      this.snapGraphics.lineStyle(2, 0xffff00, 1);
+      this.snapGraphics.strokeCircle(snap.x, snap.y, 18);
+    }
     if (this.pendingJointA) {
+      const endpoint = snap || raw;
       this.ghostGraphics.lineStyle(4, 0x9b6b3a, 0.4);
       this.ghostGraphics.beginPath();
       this.ghostGraphics.moveTo(this.pendingJointA.x, this.pendingJointA.y);
-      this.ghostGraphics.lineTo(pointer.worldX, pointer.worldY);
+      this.ghostGraphics.lineTo(endpoint.x, endpoint.y);
       this.ghostGraphics.strokePath();
     }
   }
