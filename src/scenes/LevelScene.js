@@ -35,6 +35,7 @@ export class LevelScene extends Phaser.Scene {
     this.input.on('pointermove', (pointer) => this.handleHover(pointer));
 
     physics.attach(this);
+    physics.buildCanyon(this.level.canyon);
 
     // Create anchor bodies and add them to the joints registry by id.
     for (const a of this.level.anchors) {

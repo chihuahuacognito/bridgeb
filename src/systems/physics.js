@@ -1,13 +1,29 @@
 // src/systems/physics.js
 // Per spec §2 rule 1: THIS IS THE ONLY FILE THAT CALLS scene.matter.*
 
+// Collision categories:
+//   0x0001 VEHICLE  — chassis and wheels
+//   0x0002 JOINT    — joint-circle bodies (no-collision; just constraint endpoints)
+//   0x0004 BEAM     — beam rectangle bodies (the collision surface)
+//   0x0008 WORLD    — canyon walls and other static geometry
+//
+// Masks:
+//   chassis = 0xFFFF & ~0x0002  — collide with everything except joints (kept from plan)
+//   wheel   = default (0xFFFFFFFF) — collide with everything
+//   joint   = 0x0000            — collide with nothing (unchanged)
+//   beam    = 0x0001            — collide ONLY with vehicle (so beams don't collide with walls/each other)
+//   wall    = 0xFFFF            — collide with everything except joints (joints have mask=0)
+//
+// Beam bodies share group = -1 so adjacent beams sharing a joint don't shove each other.
+
 const MIN_REST_LEN = 4;
 const SNAP_ABS_PX  = 8;
 
 const physics = {
   _scene: null,
   _nodes: new Map(),       // jointId -> Matter.Body (small circle)
-  _beamConstraints: [],    // [{ constraint, material }]
+  _beamConstraints: [],    // [{ constraint, material, body, attachA, attachB }]
+  _canyonBodies: [],
   _bodySnapshots: new Map(),
   _pendingSnaps: [],
   _lastStaggerAt: 0,
@@ -27,8 +43,11 @@ const physics = {
     if (this._scene) {
       const toRemove = [
         ...this._nodes.values(),
-        ...this._beamConstraints.map(b => b.constraint),
+        ...this._canyonBodies,
       ];
+      for (const b of this._beamConstraints) {
+        toRemove.push(b.constraint, b.body, b.attachA, b.attachB);
+      }
       if (this._vehicle) {
         toRemove.push(this._vehicle.chassis, ...this._vehicle.wheels);
       }
@@ -36,6 +55,7 @@ const physics = {
     }
     this._nodes.clear();
     this._beamConstraints.length = 0;
+    this._canyonBodies.length = 0;
     this._bodySnapshots.clear();
     this._vehicle = null;
     this._pendingSnaps = this._pendingSnaps || [];
@@ -57,19 +77,70 @@ const physics = {
     return body;
   },
 
-  // Build a beam constraint between two joint bodies. Returns the constraint.
-  buildBeam(bodyA, bodyB, material) {
-    const dx = bodyA.position.x - bodyB.position.x;
-    const dy = bodyA.position.y - bodyB.position.y;
-    const length = Math.hypot(dx, dy);
+  // Create static collision bodies for canyon walls. Called once from LevelScene
+  // after physics.attach. Idempotent: clears existing canyon bodies first.
+  buildCanyon(canyonData) {
+    if (!this._scene) return;
+    // If called twice, clear previous walls first.
+    if (this._canyonBodies.length > 0) {
+      this._scene.matter.world.remove(this._canyonBodies);
+      this._canyonBodies.length = 0;
+    }
+    const { leftWall, rightWall } = canyonData;
+    for (const wall of [leftWall, rightWall]) {
+      const body = this._scene.matter.add.rectangle(
+        wall.x, wall.y, wall.width, wall.height,
+        {
+          isStatic: true,
+          label: 'canyon-wall',
+          friction: 0.6,
+          collisionFilter: { category: 0x0008, mask: 0xFFFF },
+        }
+      );
+      this._canyonBodies.push(body);
+    }
+  },
 
-    const constraint = this._scene.matter.add.constraint(bodyA, bodyB, length, material.stiffness, {
-      damping: 0.05,
-    });
-    // Stash material + history on the constraint for stress reading.
+  // A beam is:
+  //   1. A stress constraint between the two joint nodes (measures separation,
+  //      drives the snap logic — unchanged from plan).
+  //   2. A thin rectangle collision body lying along the beam, with negligible
+  //      mass and stiff constraints to both joints so it follows them. This is
+  //      what wheels actually roll on.
+  buildBeam(bodyA, bodyB, material) {
+    const dx = bodyB.position.x - bodyA.position.x;
+    const dy = bodyB.position.y - bodyA.position.y;
+    const length = Math.hypot(dx, dy);
+    const angle = Math.atan2(dy, dx);
+    const midX = (bodyA.position.x + bodyB.position.x) / 2;
+    const midY = (bodyA.position.y + bodyB.position.y) / 2;
+
+    // (1) Stress constraint between joints — unchanged behavior.
+    const constraint = this._scene.matter.add.constraint(
+      bodyA, bodyB, length, material.stiffness, { damping: 0.05 }
+    );
     constraint.material = material;
     constraint._stressHistory = [];
-    this._beamConstraints.push({ constraint, material });
+
+    // (2) Collision body — thin rectangle aligned along the beam.
+    const beamBody = this._scene.matter.add.rectangle(midX, midY, length, 6, {
+      label: 'beam',
+      angle,
+      friction: 0.6,
+      density: 0.0001, // negligible: don't load the bridge with phantom mass
+      collisionFilter: { category: 0x0004, mask: 0x0001, group: -1 },
+    });
+
+    // Two stiff attachment constraints pin the rectangle ends to the joints.
+    // pointA is a body-local offset; the rectangle's left tip is at (-length/2, 0).
+    const attachA = this._scene.matter.add.constraint(beamBody, bodyA, 0, 1.0, {
+      pointA: { x: -length / 2, y: 0 },
+    });
+    const attachB = this._scene.matter.add.constraint(beamBody, bodyB, 0, 1.0, {
+      pointA: { x: length / 2, y: 0 },
+    });
+
+    this._beamConstraints.push({ constraint, material, body: beamBody, attachA, attachB });
     return constraint;
   },
 
@@ -86,7 +157,8 @@ const physics = {
     if (!this._scene) return;
     const idx = this._beamConstraints.findIndex(b => b.constraint === constraint);
     if (idx >= 0) {
-      this._scene.matter.world.remove(constraint);
+      const b = this._beamConstraints[idx];
+      this._scene.matter.world.remove([b.constraint, b.body, b.attachA, b.attachB]);
       this._beamConstraints.splice(idx, 1);
     }
   },
