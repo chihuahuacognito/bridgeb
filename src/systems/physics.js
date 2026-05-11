@@ -73,6 +73,20 @@ const physics = {
     return this._beamConstraints.length;
   },
 
+  isAnchor(body) {
+    return body.isStatic && body.label === 'anchor';
+  },
+
+  // Disconnect a beam at runtime (called by cascade in Task 8)
+  removeBeam(constraint) {
+    if (!this._scene) return;
+    const idx = this._beamConstraints.findIndex(b => b.constraint === constraint);
+    if (idx >= 0) {
+      this._scene.matter.world.remove(constraint);
+      this._beamConstraints.splice(idx, 1);
+    }
+  },
+
   // Capture rollback snapshot. Spec §3.15.
   captureSnapshot() {
     this._bodySnapshots.clear();
