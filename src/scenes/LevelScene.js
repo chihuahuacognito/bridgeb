@@ -158,13 +158,43 @@ export class LevelScene extends Phaser.Scene {
 
   redrawBeamsFromBodies() {
     this.beamsGraphics.clear();
-    this.beamsGraphics.lineStyle(6, 0x9b6b3a, 1);
     for (const { constraint } of physics._beamConstraints) {
+      const stress = physics.readStressSmoothed(constraint);
+      const color = this.stressColor(stress);
+      const thickness = 6 + stress * 2;  // shimmer: 6 → 8 px
+      this.beamsGraphics.lineStyle(thickness, color, 1);
       this.beamsGraphics.beginPath();
       this.beamsGraphics.moveTo(constraint.bodyA.position.x, constraint.bodyA.position.y);
       this.beamsGraphics.lineTo(constraint.bodyB.position.x, constraint.bodyB.position.y);
       this.beamsGraphics.strokePath();
+      if (stress > 0.5) this.drawStressGlow(constraint, stress, color);
     }
+  }
+
+  stressColor(s) {
+    // Green (0x33cc33) → Yellow (0xffcc00) → Red (0xff3333)
+    if (s < 0.5) {
+      const t = s / 0.5;
+      return Phaser.Display.Color.GetColor(
+        Math.round(0x33 + (0xff - 0x33) * t),
+        Math.round(0xcc + (0xcc - 0xcc) * t),
+        Math.round(0x33 + (0x00 - 0x33) * t)
+      );
+    }
+    const t = (s - 0.5) / 0.5;
+    return Phaser.Display.Color.GetColor(
+      0xff,
+      Math.round(0xcc - 0xcc * t * 0.6),
+      Math.round(0x00 + (0x33 - 0x00) * t)
+    );
+  }
+
+  drawStressGlow(c, stress, color) {
+    const radius = 10 + stress * 12;
+    this.beamsGraphics.fillStyle(color, 0.25 * stress);
+    const mx = (c.bodyA.position.x + c.bodyB.position.x) / 2;
+    const my = (c.bodyA.position.y + c.bodyB.position.y) / 2;
+    this.beamsGraphics.fillCircle(mx, my, radius);
   }
 
   toggleTest() {

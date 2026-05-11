@@ -182,6 +182,29 @@ const physics = {
   getVehicleChassisPosition() {
     return this._vehicle ? this._vehicle.chassis.position : null;
   },
+
+  readStressNormalized(c) {
+    const cur = Math.hypot(
+      c.bodyA.position.x - c.bodyB.position.x,
+      c.bodyA.position.y - c.bodyB.position.y
+    );
+    if (c.length === 0) {
+      const raw = c.stiffness * cur / SNAP_ABS_PX;
+      return Math.min(1, Math.max(0, raw / c.material.snapThreshold));
+    }
+    const denom = Math.max(c.length, MIN_REST_LEN);
+    const raw = c.stiffness * Math.abs(cur - c.length) / denom;
+    return Math.min(1, Math.max(0, raw / c.material.snapThreshold));
+  },
+
+  readStressSmoothed(c) {
+    const raw = this.readStressNormalized(c);
+    c._stressHistory.push(raw);
+    if (c._stressHistory.length > 5) c._stressHistory.shift();
+    let sum = 0;
+    for (const s of c._stressHistory) sum += s;
+    return sum / c._stressHistory.length;
+  },
 };
 
 // Named exports for testability — tests import the SAME formula impls
