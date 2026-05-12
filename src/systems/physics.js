@@ -19,6 +19,11 @@
 const MIN_REST_LEN = 4;
 const SNAP_ABS_PX  = 8;
 
+// Visual strain saturation point: the stretch ratio at which the visual
+// stress signal reads 1.0. Independent of material.snapThreshold so future
+// snap tuning doesn't break the visualization.
+const VISUAL_FULL_STRAIN = 0.4;
+
 const physics = {
   _scene: null,
   _nodes: new Map(),       // jointId -> Matter.Body (small circle)
@@ -46,7 +51,9 @@ const physics = {
         ...this._canyonBodies,
       ];
       for (const b of this._beamConstraints) {
-        toRemove.push(b.constraint, b.body, b.attachA, b.attachB);
+        toRemove.push(b.constraint, b.body);
+        if (b.attachA) toRemove.push(b.attachA);
+        if (b.attachB) toRemove.push(b.attachB);
       }
       if (this._vehicle) {
         toRemove.push(this._vehicle.chassis, ...this._vehicle.wheels);
@@ -65,11 +72,18 @@ const physics = {
   },
 
   // Build a small circle "joint node" body. Returns the body.
+  //
+  // Mid-joints get density 0.05 (mass ≈ 2.5) so they have enough inertia to
+  // resist being yanked downward by the car's weight via the beam attach
+  // constraints. Default Matter density would give mass ≈ 0.05 — 900× lighter
+  // than the car, which made joints plummet and the car fall through.
+  // Anchors are static so density has no effect on them.
   ensureJointNode(jointId, x, y, isAnchor) {
     if (this._nodes.has(jointId)) return this._nodes.get(jointId);
     const body = this._scene.matter.add.circle(x, y, 4, {
       isStatic: !!isAnchor,
       label: isAnchor ? 'anchor' : 'joint',
+      density: 0.05,
       collisionFilter: { category: 0x0002, mask: 0x0000 }, // BRIDGE category, no collisions with vehicle yet
       render: { fillStyle: isAnchor ? '#ff3b3b' : '#9b6b3a' },
     });
@@ -104,9 +118,12 @@ const physics = {
   // A beam is:
   //   1. A stress constraint between the two joint nodes (measures separation,
   //      drives the snap logic — unchanged from plan).
-  //   2. A thin rectangle collision body lying along the beam, with negligible
-  //      mass and stiff constraints to both joints so it follows them. This is
-  //      what wheels actually roll on.
+  //   2. A rectangle collision body lying along the beam — what wheels roll on.
+  //      If both endpoints are static anchors, the body is static too: rigid
+  //      plank, no attach constraints needed. Otherwise the body is dynamic
+  //      and pinned to both joints via stiff zero-length constraints so it
+  //      tracks them as the bridge flexes. The dynamic path uses a thicker,
+  //      heavier body to resist wheel tunneling and impulse pushback.
   buildBeam(bodyA, bodyB, material) {
     const dx = bodyB.position.x - bodyA.position.x;
     const dy = bodyB.position.y - bodyA.position.y;
@@ -114,6 +131,7 @@ const physics = {
     const angle = Math.atan2(dy, dx);
     const midX = (bodyA.position.x + bodyB.position.x) / 2;
     const midY = (bodyA.position.y + bodyB.position.y) / 2;
+    const bothStatic = bodyA.isStatic && bodyB.isStatic;
 
     // (1) Stress constraint between joints — unchanged behavior.
     const constraint = this._scene.matter.add.constraint(
@@ -122,23 +140,41 @@ const physics = {
     constraint.material = material;
     constraint._stressHistory = [];
 
-    // (2) Collision body — thin rectangle aligned along the beam.
-    const beamBody = this._scene.matter.add.rectangle(midX, midY, length, 6, {
+    // (2) Collision body. Static plank if anchor-to-anchor (cheapest, perfect
+    // collision surface, zero pushback). Otherwise dynamic with stiff pins.
+    //
+    // The body is shifted perpendicular-down by thickness/2 so its TOP edge
+    // (not its centerline) lies along the joint-to-joint line. Without this,
+    // the beam protrudes T/2 above the anchor and the vehicle wheels hit a
+    // curb when transitioning wall → beam.
+    //   perp-down direction (in screen coords, +y is down): (-sin θ, cos θ)
+    const thickness = bothStatic ? 10 : 12;
+    const perpDownX = -Math.sin(angle);
+    const perpDownY = Math.cos(angle);
+    const beamCenterX = midX + perpDownX * (thickness / 2);
+    const beamCenterY = midY + perpDownY * (thickness / 2);
+
+    const beamBody = this._scene.matter.add.rectangle(beamCenterX, beamCenterY, length, thickness, {
       label: 'beam',
       angle,
+      isStatic: bothStatic,
       friction: 0.6,
-      density: 0.0001, // negligible: don't load the bridge with phantom mass
+      density: bothStatic ? undefined : 0.001,
       collisionFilter: { category: 0x0004, mask: 0x0001, group: -1 },
     });
 
-    // Two stiff attachment constraints pin the rectangle ends to the joints.
-    // pointA is a body-local offset; the rectangle's left tip is at (-length/2, 0).
-    const attachA = this._scene.matter.add.constraint(beamBody, bodyA, 0, 1.0, {
-      pointA: { x: -length / 2, y: 0 },
-    });
-    const attachB = this._scene.matter.add.constraint(beamBody, bodyB, 0, 1.0, {
-      pointA: { x: length / 2, y: 0 },
-    });
+    let attachA = null, attachB = null;
+    if (!bothStatic) {
+      // Dynamic beam: pin both ends to their joints. Attach at the TOP
+      // corners of the rectangle (body-local y = -thickness/2) so the
+      // joints sit at the deck surface, not the deck centerline.
+      attachA = this._scene.matter.add.constraint(beamBody, bodyA, 0, 1.0, {
+        pointA: { x: -length / 2, y: -thickness / 2 },
+      });
+      attachB = this._scene.matter.add.constraint(beamBody, bodyB, 0, 1.0, {
+        pointA: { x: length / 2, y: -thickness / 2 },
+      });
+    }
 
     this._beamConstraints.push({ constraint, material, body: beamBody, attachA, attachB });
     return constraint;
@@ -158,7 +194,10 @@ const physics = {
     const idx = this._beamConstraints.findIndex(b => b.constraint === constraint);
     if (idx >= 0) {
       const b = this._beamConstraints[idx];
-      this._scene.matter.world.remove([b.constraint, b.body, b.attachA, b.attachB]);
+      const toRemove = [b.constraint, b.body];
+      if (b.attachA) toRemove.push(b.attachA);
+      if (b.attachB) toRemove.push(b.attachB);
+      this._scene.matter.world.remove(toRemove);
       this._beamConstraints.splice(idx, 1);
     }
   },
@@ -214,30 +253,65 @@ const physics = {
     if (this._scene) this._scene.matter.world.engine.timing.timeScale = scale;
   },
 
+  // Freeze the vehicle in place by making all its bodies static. Stops
+  // gravity, drift, suspension oscillation, and any rotation. Used after
+  // win/fail so the car holds its result-frame pose during the overlay.
+  freezeVehicle() {
+    if (!this._scene || !this._vehicle) return;
+    const Matter = this._scene.matter;
+    const v = this._vehicle;
+    for (const body of [v.chassis, ...v.wheels]) {
+      Matter.body.setStatic(body, true);
+    }
+  },
+
+  // Remove the vehicle from the world. Used when test mode ends so the next
+  // test cycle starts with a fresh spawn instead of leaking old chassis/wheels.
+  removeVehicle() {
+    if (!this._scene || !this._vehicle) return;
+    const v = this._vehicle;
+    this._scene.matter.world.remove([v.chassis, ...v.wheels]);
+    this._vehicle = null;
+  },
+
   spawnVehicle(config) {
     if (!this._scene) return null;
     const { spawnAt, weight } = config;
-    const spawnX = spawnAt === 'left' ? 200 : 1080;
-    const spawnY = 340;
+    // Spawn at the horizontal center of the spawn-side canyon wall so the
+    // chassis (width 80) sits fully on the wall (width 80). spawnY is high
+    // enough that wheel bottoms (y + 14 + 12 = y + 26) start above the wall
+    // top y=360 rather than embedded in it.
+    const spawnX = spawnAt === 'left' ? 240 : 1040;
+    const spawnY = 320;
 
-    // Chassis
+    // Chassis. Tuning follows the canonical matter-js car example
+    // (examples/car.js): low density, free rotation. group: -2 puts chassis
+    // and wheels in a shared negative group so they never collide with each
+    // other — wheel bodies (dy=14, r=12) overlap the chassis bottom, and
+    // without the shared group the rigid wheel pins would fight Matter's
+    // penetration resolution every frame.
     const chassis = this._scene.matter.add.rectangle(spawnX, spawnY, 80, 24, {
       label: 'vehicle-chassis',
-      collisionFilter: { category: 0x0001, mask: 0xFFFF & ~0x0002 }, // collide with all but BRIDGE
-      density: weight / (80 * 24 * 100), // tune by feel; spec §7.3 deferred
+      collisionFilter: { category: 0x0001, mask: 0xFFFF & ~0x0002, group: -2 },
+      density: weight / (80 * 24 * 1000), // matches reference density (~0.0002)
     });
 
-    // Two wheels with low-stiffness suspension constraints (spec §3.1, §7.3)
+    // Two wheels rigidly pinned to chassis-local offsets (length 0,
+    // stiffness 1.0 = canonical matter-js car-axle pattern). Wheels still
+    // spin freely around their own centers; the pin only constrains
+    // position, not rotation. Friction 0.8 matches the reference.
     const wheelOffsets = [{ dx: -28, dy: 14 }, { dx: 28, dy: 14 }];
     const wheels = [];
     for (const off of wheelOffsets) {
       const wheel = this._scene.matter.add.circle(spawnX + off.dx, spawnY + off.dy, 12, {
         label: 'vehicle-wheel',
-        friction: 0.95,
+        friction: 0.8,
         density: 0.05,
+        collisionFilter: { group: -2 },
       });
-      this._scene.matter.add.constraint(chassis, wheel,
-        Math.hypot(off.dx, off.dy), 0.5, { damping: 0.2 }); // stiffness 0.5 per spec §7.3
+      this._scene.matter.add.constraint(chassis, wheel, 0, 1.0, {
+        pointA: { x: off.dx, y: off.dy },
+      });
       wheels.push(wheel);
     }
 
@@ -245,14 +319,18 @@ const physics = {
     return this._vehicle;
   },
 
+  // Drive by spinning the wheels (the canonical matter-js car pattern). The
+  // wheels grip the ground via friction; the chassis follows. Applying force
+  // to the chassis center directly does NOT work — high wheel friction holds
+  // the chassis in place against any reasonable drive force.
+  //   ω = 0.15 rad/tick on wheel radius 12 → ~108 px/s surface speed at 60fps.
   driveVehicle() {
     if (!this._vehicle) return;
-    const force = this._vehicle.config.spawnAt === 'left' ? 0.02 : -0.02;
-    this._scene.matter.body.applyForce(
-      this._vehicle.chassis,
-      this._vehicle.chassis.position,
-      { x: force, y: 0 }
-    );
+    const omega = this._vehicle.config.spawnAt === 'left' ? 0.15 : -0.15;
+    const Matter = this._scene.matter;
+    for (const wheel of this._vehicle.wheels) {
+      Matter.body.setAngularVelocity(wheel, omega);
+    }
   },
 
   getVehicleChassisPosition() {
@@ -280,6 +358,19 @@ const physics = {
     let sum = 0;
     for (const s of c._stressHistory) sum += s;
     return sum / c._stressHistory.length;
+  },
+
+  // Visual-only strain reader. Returns [0, 1] based on |Δlength|/restLength,
+  // saturating at VISUAL_FULL_STRAIN. Distinct from readStressNormalized,
+  // which is normalized against material.snapThreshold for the snap mechanic.
+  readStrainVisual(c) {
+    const cur = Math.hypot(
+      c.bodyA.position.x - c.bodyB.position.x,
+      c.bodyA.position.y - c.bodyB.position.y
+    );
+    const rest = Math.max(c.length, MIN_REST_LEN);
+    const ratio = Math.abs(cur - rest) / rest;
+    return Math.min(1, ratio / VISUAL_FULL_STRAIN);
   },
 
   setOnSnap(cb) { this._onSnapCallback = cb; },
@@ -341,6 +432,10 @@ export function readStressNormalized(constraint) {
 
 export function readStressSmoothed(constraint) {
   return physics.readStressSmoothed(constraint);
+}
+
+export function readStrainVisual(constraint) {
+  return physics.readStrainVisual(constraint);
 }
 
 export default physics;

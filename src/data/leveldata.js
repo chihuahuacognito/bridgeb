@@ -21,7 +21,7 @@ export const L1 = {
     { type: 'car', spawnAt: 'left', weight: 200, speed: 'normal' },
   ],
   materials: {
-    wood: { stiffness: 0.75, snapThreshold: 0.7 }, // L1-relaxed (spec §3.5)
+    wood: { stiffness: 0.9, snapThreshold: 2.0 }, // L1-relaxed (spec §3.5)
   },
 };
 
