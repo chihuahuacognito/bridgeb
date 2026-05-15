@@ -16,7 +16,7 @@ const config = {
       positionIterations: 8,           // spec §3.4 (defensive headroom)
       velocityIterations: 6,
       constraintIterations: 4,
-      debug: false,                    // flip to true for collision debug
+      debug: false,                   // flip to true for collision debug
     },
   },
   scene: [BootScene, LevelScene],

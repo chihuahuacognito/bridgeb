@@ -12,11 +12,11 @@ describe('readStrainVisual', () => {
     expect(readStrainVisual(c)).toBeLessThan(0.01);
   });
 
-  it('returns 0.5 at half VISUAL_FULL_STRAIN stretch (20% of rest)', () => {
-    // VISUAL_FULL_STRAIN = 0.4. Half = 0.2. 20% of 100 = 20 → bodies 120 apart.
+  it('returns 0.5 at half VISUAL_FULL_STRAIN stretch (4% of rest)', () => {
+    // VISUAL_FULL_STRAIN = 0.08. Half = 0.04. 4% of 100 = 4 → bodies 104 apart.
     const { Matter, world } = createHeadlessWorld({ gravityY: 0 });
     const a = Matter.Bodies.circle(100, 100, 4, { isStatic: true });
-    const b = Matter.Bodies.circle(220, 100, 4, { isStatic: true });
+    const b = Matter.Bodies.circle(204, 100, 4, { isStatic: true });
     Matter.Composite.add(world, [a, b]);
     const c = Matter.Constraint.create({ bodyA: a, bodyB: b, length: 100, stiffness: 0.75 });
     const v = readStrainVisual(c);
@@ -25,10 +25,10 @@ describe('readStrainVisual', () => {
   });
 
   it('saturates at 1.0 when stretch >= VISUAL_FULL_STRAIN', () => {
-    // 50% stretch (150-100 = 50, ratio 0.5) > VISUAL_FULL_STRAIN 0.4 → saturates.
+    // 10% stretch (110-100 = 10, ratio 0.10) > VISUAL_FULL_STRAIN 0.08 → saturates.
     const { Matter, world } = createHeadlessWorld({ gravityY: 0 });
     const a = Matter.Bodies.circle(100, 100, 4, { isStatic: true });
-    const b = Matter.Bodies.circle(250, 100, 4, { isStatic: true });
+    const b = Matter.Bodies.circle(210, 100, 4, { isStatic: true });
     Matter.Composite.add(world, [a, b]);
     const c = Matter.Constraint.create({ bodyA: a, bodyB: b, length: 100, stiffness: 0.75 });
     expect(readStrainVisual(c)).toBe(1);

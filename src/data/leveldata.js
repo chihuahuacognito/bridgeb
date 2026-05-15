@@ -21,8 +21,32 @@ export const L1 = {
     { type: 'car', spawnAt: 'left', weight: 200, speed: 'normal' },
   ],
   materials: {
-    wood: { stiffness: 0.9, snapThreshold: 2.0 }, // L1-relaxed (spec §3.5)
+    wood: { stiffness: 0.9, snapThreshold: 1.5 },
   },
 };
 
-export const ALL_LEVELS = { L1 };
+export const DEV_STRESS = {
+  id: 'DEV_STRESS',
+  title: 'Dev — Stress Test',
+  span: 6,
+  budget: 9999,
+  worldWidth: 1280,
+  worldHeight: 720,
+  canyon: {
+    leftWall:  { x: 240,  y: 480, width: 80,  height: 240 },
+    rightWall: { x: 1040, y: 480, width: 80,  height: 240 },
+    waterY: 660,
+  },
+  anchors: [
+    { id: 'L', x: 280,  y: 360, side: 'left' },
+    { id: 'R', x: 1000, y: 360, side: 'right' },
+  ],
+  vehicles: [
+    { type: 'car', spawnAt: 'left', weight: 2000, speed: 'normal' },
+  ],
+  materials: {
+    wood: { stiffness: 0.25, snapThreshold: 1.5 },
+  },
+};
+
+export const ALL_LEVELS = { L1, DEV_STRESS };

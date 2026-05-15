@@ -1,5 +1,6 @@
 // src/scenes/LevelScene.js
 import Phaser from 'phaser';
+import GUI from 'lil-gui';
 import { ALL_LEVELS } from '../data/leveldata.js';
 import physics from '../systems/physics.js';
 import audio from '../systems/audio.js';
@@ -63,11 +64,12 @@ export class LevelScene extends Phaser.Scene {
     this.drawCanyon();
     this.drawWater();
 
-    this.beamsGraphics  = this.add.graphics(); // back: brown base
-    this.stressGraphics = this.add.graphics(); // mid: stress overlay (test mode only)
-    this.jointsGraphics = this.add.graphics(); // front: anchor plates + joint pins + glow
-    this.ghostGraphics = this.add.graphics();
-    this.snapGraphics = this.add.graphics();
+    this.beamsGraphics   = this.add.graphics(); // back: brown base
+    this.stressGraphics  = this.add.graphics(); // mid: stress overlay (test mode only)
+    this.jointsGraphics  = this.add.graphics(); // front: anchor plates + joint pins + glow
+    this.vehicleGraphics = this.add.graphics(); // vehicle chassis + visual wheels
+    this.ghostGraphics   = this.add.graphics();
+    this.snapGraphics    = this.add.graphics();
     this.snapTarget = null;
 
     this.input.on('pointerdown', (pointer) => this.handleClick(pointer));
@@ -105,6 +107,19 @@ export class LevelScene extends Phaser.Scene {
     this.material = this.level.materials.wood;
     this.beamConstraints = [];           // mirrors physics._beamConstraints, for rendering
 
+    this._cheatParams = {
+      carDensity:       0.008,
+      driveSpeed:       3,
+      stiffness:        this.material.stiffness,
+      snapThreshold:    this.material.snapThreshold,
+      visualFullStrain: 0.08,
+      strainMed:        VIZ.STRAIN_MED,
+      strainHigh:       VIZ.STRAIN_HIGH,
+      strainCrit:       VIZ.STRAIN_CRIT,
+      gravityY:         1.5,
+    };
+    this._buildCheatGui();
+
     // Test/Reset button overlay
     this.testButton = this.add.rectangle(640, 40, 200, 50, 0x2e7d32).setInteractive();
     this.testButtonLabel = this.add.text(640, 40, 'TEST', { fontSize: '20px', color: '#fff' }).setOrigin(0.5);
@@ -119,6 +134,7 @@ export class LevelScene extends Phaser.Scene {
       audio.detach(this);
       juice.detach(this);
       cam.detach(this);
+      this._gui?.destroy();
     });
   }
 
@@ -364,6 +380,45 @@ export class LevelScene extends Phaser.Scene {
     }
   }
 
+  _buildCheatGui() {
+    const p = this._cheatParams;
+    const gui = new GUI({ width: 280, title: 'Cheat Panel' });
+    this._gui = gui;
+
+    const veh = gui.addFolder('Vehicle  (takes effect at next TEST)');
+    veh.add(p, 'carDensity', 0.001, 0.05, 0.001).name('Car Density');
+    veh.add(p, 'driveSpeed', 1, 8, 0.5).name('Drive Speed (px/f)');
+
+    const mat = gui.addFolder('Material (Wood)');
+    mat.add(p, 'stiffness', 0.05, 1.0, 0.01).name('Stiffness').onChange(v => {
+      this.material.stiffness = v;
+      physics.updateBeamMaterial(v, p.snapThreshold);
+    });
+    mat.add(p, 'snapThreshold', 0.05, 3.0, 0.05).name('Snap Threshold').onChange(v => {
+      this.material.snapThreshold = v;
+      physics.updateBeamMaterial(p.stiffness, v);
+    });
+
+    const viz = gui.addFolder('Visual');
+    viz.add(p, 'visualFullStrain', 0.01, 0.5, 0.005).name('Full Strain Sat').onChange(v => {
+      physics.setVisualFullStrain(v);
+    });
+    viz.add(p, 'strainMed', 0.01, 0.5, 0.01).name('Strain MED').onChange(v => {
+      VIZ.STRAIN_MED = v;
+    });
+    viz.add(p, 'strainHigh', 0.01, 1.0, 0.01).name('Strain HIGH').onChange(v => {
+      VIZ.STRAIN_HIGH = v;
+    });
+    viz.add(p, 'strainCrit', 0.01, 1.0, 0.01).name('Strain CRIT').onChange(v => {
+      VIZ.STRAIN_CRIT = v;
+    });
+
+    const phys = gui.addFolder('Physics');
+    phys.add(p, 'gravityY', 0.5, 10.0, 0.1).name('Gravity Y').onChange(v => {
+      physics.setGravity(v);
+    });
+  }
+
   toggleTest() {
     if (this.mode === 'build') {
       physics.captureSnapshot();
@@ -371,12 +426,16 @@ export class LevelScene extends Phaser.Scene {
       this.testButtonLabel.setText('RESET');
       physics.setTimeScale(1.0);
       physics.setRunnerEnabled(true);   // start simulating
-      const vehicleConfig = this.level.vehicles[0]; // spec §2 rule 3: always an array
+      const vehicleConfig = {
+        ...this.level.vehicles[0], // spec §2 rule 3: always an array
+        density:    this._cheatParams.carDensity,
+        driveSpeed: this._cheatParams.driveSpeed,
+      };
       physics.spawnVehicle(vehicleConfig);
       cam.follow(() => physics.getVehicleChassisPosition());
-      this.vehicleGraphics = this.add.graphics();
       this.testEndAt = 0;
     } else {
+      juice.reset();
       this.rebuildBridge();
       cam.follow(null);
       this.cameras.main.scrollX = 0;
@@ -427,6 +486,7 @@ export class LevelScene extends Phaser.Scene {
       // Stop driving once a win/fail is in flight so the car doesn't drift
       // past the result.
       if (!this.testEndAt) physics.driveVehicle();
+      physics.applyVehicleLoad();
       physics.evaluateStress(this.time.now, physics.getTimeScale());
       juice.tick(this.time.now, physics.isCascadeActive(this.time.now));
       cam.tick(this.time.now);
@@ -504,18 +564,32 @@ export class LevelScene extends Phaser.Scene {
   }
 
   redrawVehicle() {
-    if (!this.vehicleGraphics) return;
     this.vehicleGraphics.clear();
     const v = physics._vehicle;
     if (!v) return;
     const c = v.chassis;
+    const cx = c.position.x, cy = c.position.y;
+    const cos = Math.cos(c.angle), sin = Math.sin(c.angle);
+
+    // Chassis as a rotation-aware filled polygon.
+    const hw = 40, hh = 12;
+    const corners = [
+      { x: cx - hw * cos + hh * sin, y: cy - hw * sin - hh * cos },
+      { x: cx + hw * cos + hh * sin, y: cy + hw * sin - hh * cos },
+      { x: cx + hw * cos - hh * sin, y: cy + hw * sin + hh * cos },
+      { x: cx - hw * cos - hh * sin, y: cy - hw * sin + hh * cos },
+    ];
     this.vehicleGraphics.fillStyle(0xf08c1a, 1);
-    this.vehicleGraphics.fillRect(c.position.x - 40, c.position.y - 12, 80, 24);
+    this.vehicleGraphics.fillPoints(corners, true);
     this.vehicleGraphics.lineStyle(2, 0x331a00, 1);
-    this.vehicleGraphics.strokeRect(c.position.x - 40, c.position.y - 12, 80, 24);
+    this.vehicleGraphics.strokePoints(corners, true);
+
+    // Visual-only wheels at fixed body-local offsets.
     this.vehicleGraphics.fillStyle(0x222222, 1);
-    for (const w of v.wheels) {
-      this.vehicleGraphics.fillCircle(w.position.x, w.position.y, 12);
+    for (const { dx, dy } of [{ dx: 28, dy: 12 }, { dx: -28, dy: 12 }]) {
+      const wx = cx + dx * cos - dy * sin;
+      const wy = cy + dx * sin + dy * cos;
+      this.vehicleGraphics.fillCircle(wx, wy, 12);
     }
   }
 }

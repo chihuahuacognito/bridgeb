@@ -17,6 +17,7 @@
   "license": "ISC",
   "dependencies": {
     "idb": "^8.0.3",
+    "lil-gui": "^0.21.0",
     "phaser": "^3.90.0"
   },
   "devDependencies": {
