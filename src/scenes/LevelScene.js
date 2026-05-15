@@ -13,11 +13,18 @@ const VIZ = {
   STRAIN_HIGH: 0.20,
   STRAIN_CRIT: 0.50,
 
-  // Beam base
-  BEAM_BASE_COLOR: 0x9b6b3a,
+  // Road beam (black deck)
+  ROAD_COLOR:      0x1a1a1a,
+  ROAD_THICKNESS:  8,
+
+  // Wood beam (orange structural)
+  BEAM_COLOR:      0xd48a0c,
+  BEAM_THICKNESS:  4,
+
+  // Kept for stress overlay reuse
   BEAM_BASE_THICKNESS: 6,
 
-  // Stress overlay (additive on top of base)
+  // Stress overlay
   OVERLAY_COLOR_MED:  0xffd24a,
   OVERLAY_COLOR_HIGH: 0xff8a1f,
   OVERLAY_COLOR_CRIT: 0xff2e2e,
@@ -33,16 +40,21 @@ const VIZ = {
   CRACK_LENGTH: 12,
   CRACK_COLOR: 0x1a0a0a,
 
-  // Joint visuals
-  ANCHOR_COLOR: 0xc23030,
-  ANCHOR_SIZE: 14,
-  JOINT_COLOR: 0x6b4a25,
-  JOINT_RADIUS: 5,
-  JOINT_RING_COLOR: 0x3a2510,
+  // Joint visuals — Poly Bridge palette
+  ANCHOR_COLOR: 0xdd2222,
+  ANCHOR_RADIUS: 10,
+  JOINT_COLOR: 0xf5d400,
+  JOINT_RADIUS: 7,
+  JOINT_RING_COLOR: 0xc8aa00,
   JOINT_GLOW_COLOR_HIGH: 0xff8a1f,
   JOINT_GLOW_COLOR_CRIT: 0xff2e2e,
   JOINT_GLOW_RADIUS_MAX: 22,
   JOINT_GLOW_ALPHA_MAX: 0.55,
+
+  // Grid
+  GRID_COLOR: 0x9aa0a8,
+  GRID_ALPHA: 0.18,
+  GRID_STEP:  40,
 };
 
 export class LevelScene extends Phaser.Scene {
@@ -61,12 +73,13 @@ export class LevelScene extends Phaser.Scene {
 
   create() {
     this.drawSky();
+    this.drawGrid();
     this.drawCanyon();
     this.drawWater();
 
-    this.beamsGraphics   = this.add.graphics(); // back: brown base
+    this.beamsGraphics   = this.add.graphics(); // back: beam bases
     this.stressGraphics  = this.add.graphics(); // mid: stress overlay (test mode only)
-    this.jointsGraphics  = this.add.graphics(); // front: anchor plates + joint pins + glow
+    this.jointsGraphics  = this.add.graphics(); // front: anchor circles + joint pins + glow
     this.vehicleGraphics = this.add.graphics(); // vehicle chassis + visual wheels
     this.ghostGraphics   = this.add.graphics();
     this.snapGraphics    = this.add.graphics();
@@ -104,26 +117,47 @@ export class LevelScene extends Phaser.Scene {
     this.testEndAt = 0; // when > 0, auto-return to build mode at this timestamp
 
     this.mode = 'build';                 // 'build' | 'test'
-    this.material = this.level.materials.wood;
+    this.material = this.level.materials.road; // default: road placement
     this.beamConstraints = [];           // mirrors physics._beamConstraints, for rendering
 
     this._cheatParams = {
-      carDensity:       0.008,
-      driveSpeed:       3,
-      stiffness:        this.material.stiffness,
-      snapThreshold:    this.material.snapThreshold,
-      visualFullStrain: 0.08,
-      strainMed:        VIZ.STRAIN_MED,
-      strainHigh:       VIZ.STRAIN_HIGH,
-      strainCrit:       VIZ.STRAIN_CRIT,
-      gravityY:         1.5,
+      carDensity:          0.008,
+      driveSpeed:          3,
+      roadStiffness:       this.level.materials.road.stiffness,
+      roadSnapThreshold:   this.level.materials.road.snapThreshold,
+      beamStiffness:       this.level.materials.wood.stiffness,
+      beamSnapThreshold:   this.level.materials.wood.snapThreshold,
+      visualFullStrain:    0.08,
+      strainMed:           VIZ.STRAIN_MED,
+      strainHigh:          VIZ.STRAIN_HIGH,
+      strainCrit:          VIZ.STRAIN_CRIT,
+      gravityY:            1.5,
     };
     this._buildCheatGui();
 
-    // Test/Reset button overlay
-    this.testButton = this.add.rectangle(640, 40, 200, 50, 0x2e7d32).setInteractive();
-    this.testButtonLabel = this.add.text(640, 40, 'TEST', { fontSize: '20px', color: '#fff' }).setOrigin(0.5);
-    this.testButton.on('pointerdown', () => this.toggleTest());
+    // Material selector — ROAD (black) and BEAM (orange).
+    // stopPropagation prevents the click from also firing the scene's pointerdown
+    // handler (which would start a beam placement at the button's position).
+    this._roadBtn   = this.add.rectangle(160, 40, 130, 40, VIZ.ROAD_COLOR).setInteractive().setScrollFactor(0);
+    this._roadLabel = this.add.text(160, 40, 'ROAD  [R]', { fontSize: '16px', color: '#ffffff' }).setOrigin(0.5).setScrollFactor(0);
+    this._beamBtn   = this.add.rectangle(310, 40, 130, 40, 0x444444).setInteractive().setScrollFactor(0);
+    this._beamLabel = this.add.text(310, 40, 'BEAM  [B]', { fontSize: '16px', color: '#ffffff' }).setOrigin(0.5).setScrollFactor(0);
+
+    this._roadBtn.on('pointerdown', (_p, _lx, _ly, ev) => { ev.stopPropagation(); this._selectMaterial('road'); });
+    this._beamBtn.on('pointerdown', (_p, _lx, _ly, ev) => { ev.stopPropagation(); this._selectMaterial('beam'); });
+
+    this.input.keyboard.on('keydown-R', () => this._selectMaterial('road'));
+    this.input.keyboard.on('keydown-B', () => this._selectMaterial('beam'));
+
+    // Hard RESET — clears all beams and joints, returns to a clean build state.
+    this._resetBtn   = this.add.rectangle(480, 40, 130, 40, 0x8b1a1a).setInteractive().setScrollFactor(0);
+    this._resetLabel = this.add.text(480, 40, 'CLEAR', { fontSize: '16px', color: '#ffffff' }).setOrigin(0.5).setScrollFactor(0);
+    this._resetBtn.on('pointerdown', (_p, _lx, _ly, ev) => { ev.stopPropagation(); this.hardReset(); });
+
+    // TEST / RESET SIM toggle
+    this.testButton = this.add.rectangle(640, 40, 140, 40, 0x2e7d32).setInteractive().setScrollFactor(0);
+    this.testButtonLabel = this.add.text(640, 40, 'TEST', { fontSize: '18px', color: '#fff' }).setOrigin(0.5).setScrollFactor(0);
+    this.testButton.on('pointerdown', (_p, _lx, _ly, ev) => { ev.stopPropagation(); this.toggleTest(); });
 
     // Start paused: pause Matter until the player hits TEST.
     physics.setRunnerEnabled(false);
@@ -139,13 +173,23 @@ export class LevelScene extends Phaser.Scene {
   }
 
   drawSky() {
-    // Solid for now; parallax happens in Phase 2.
-    this.cameras.main.setBackgroundColor('#87ceeb');
+    this.cameras.main.setBackgroundColor('#b2b9c2'); // Poly Bridge cool gray
+  }
+
+  drawGrid() {
+    const g = this.add.graphics();
+    g.lineStyle(1, VIZ.GRID_COLOR, VIZ.GRID_ALPHA);
+    for (let x = 0; x <= this.level.worldWidth; x += VIZ.GRID_STEP) {
+      g.beginPath(); g.moveTo(x, 0); g.lineTo(x, this.level.worldHeight); g.strokePath();
+    }
+    for (let y = 0; y <= this.level.worldHeight; y += VIZ.GRID_STEP) {
+      g.beginPath(); g.moveTo(0, y); g.lineTo(this.level.worldWidth, y); g.strokePath();
+    }
   }
 
   drawCanyon() {
     const g = this.add.graphics();
-    g.fillStyle(0x6b4f3a, 1); // earthy brown
+    g.fillStyle(0x2c3033, 1); // dark charcoal
     const { leftWall, rightWall } = this.level.canyon;
     g.fillRect(leftWall.x - leftWall.width / 2,  leftWall.y - leftWall.height / 2,
                leftWall.width, leftWall.height);
@@ -155,7 +199,7 @@ export class LevelScene extends Phaser.Scene {
 
   drawWater() {
     const g = this.add.graphics();
-    g.fillStyle(0x3a7fc4, 0.85);
+    g.fillStyle(0x1a1d20, 1); // near-black
     g.fillRect(0, this.level.canyon.waterY, this.level.worldWidth,
                this.level.worldHeight - this.level.canyon.waterY);
   }
@@ -185,7 +229,7 @@ export class LevelScene extends Phaser.Scene {
       const matA = physics._nodes.get(this.pendingJointA.bodyId);
       const matB = physics._nodes.get(endpoint.bodyId);
       physics.buildBeam(matA, matB, this.material);
-      this.beams.push({ a: this.pendingJointA, b: endpoint });
+      this.beams.push({ a: this.pendingJointA, b: endpoint, material: this.material });
       this.pendingJointA = null;
       this.redrawBeams();
       this.redrawJoints(new Map());
@@ -199,6 +243,47 @@ export class LevelScene extends Phaser.Scene {
     return { x: p.x, y: p.y, bodyId: id };
   }
 
+  _selectMaterial(type) {
+    if (this.mode !== 'build') return;
+    this.material = type === 'road'
+      ? this.level.materials.road
+      : this.level.materials.wood;
+    const roadActive = type === 'road';
+    this._roadBtn.setFillStyle(roadActive ? VIZ.ROAD_COLOR : 0x444444);
+    this._beamBtn.setFillStyle(roadActive ? 0x444444 : VIZ.BEAM_COLOR);
+  }
+
+  // Full hard reset: wipes every beam and joint, exits test mode if running,
+  // and returns to a completely fresh build state with only anchors present.
+  hardReset() {
+    // Exit simulation cleanly if it was running.
+    if (this.mode === 'test') {
+      physics.setRunnerEnabled(false);
+      cam.follow(null);
+      this.cameras.main.scrollX = 0;
+      this.cameras.main.scrollY = 0;
+      juice.reset();
+      this.winOverlay?.destroy();  this.winOverlay  = null;
+      this.failOverlay?.destroy(); this.failOverlay = null;
+      this.testEndAt = 0;
+      this.mode = 'build';
+      this.testButtonLabel.setText('TEST');
+    }
+    // Wipe player design and rebuild physics with only anchors.
+    this.clearBridgeData();
+    this.rebuildBridge();
+    this.pendingJointA = null;
+    // Clear all graphics layers.
+    this.vehicleGraphics?.clear();
+    this.stressGraphics.clear();
+    this.ghostGraphics.clear();
+    this.snapGraphics.clear();
+    this._jointStrain = null;
+    this._selectMaterial('road'); // reset to default material
+    this.redrawBeams();
+    this.redrawJoints(new Map());
+  }
+
   handleHover(pointer) {
     this.ghostGraphics.clear();
     this.snapGraphics.clear();
@@ -210,7 +295,8 @@ export class LevelScene extends Phaser.Scene {
     }
     if (this.pendingJointA) {
       const endpoint = snap || raw;
-      this.ghostGraphics.lineStyle(4, 0x9b6b3a, 0.4);
+      const ghostColor = this.material?.type === 'road' ? 0x555555 : 0xb87820;
+      this.ghostGraphics.lineStyle(4, ghostColor, 0.4);
       this.ghostGraphics.beginPath();
       this.ghostGraphics.moveTo(this.pendingJointA.x, this.pendingJointA.y);
       this.ghostGraphics.lineTo(endpoint.x, endpoint.y);
@@ -218,11 +304,14 @@ export class LevelScene extends Phaser.Scene {
     }
   }
 
-  // Build-mode base draw: brown wood planks from the design-time data.
+  // Build-mode base draw: road = thick black, beam = thinner orange.
   redrawBeams() {
     this.beamsGraphics.clear();
-    this.beamsGraphics.lineStyle(VIZ.BEAM_BASE_THICKNESS, VIZ.BEAM_BASE_COLOR, 1);
     for (const beam of this.beams) {
+      const isRoad = beam.material?.type === 'road';
+      this.beamsGraphics.lineStyle(
+        isRoad ? VIZ.ROAD_THICKNESS : VIZ.BEAM_THICKNESS,
+        isRoad ? VIZ.ROAD_COLOR     : VIZ.BEAM_COLOR, 1);
       this.beamsGraphics.beginPath();
       this.beamsGraphics.moveTo(beam.a.x, beam.a.y);
       this.beamsGraphics.lineTo(beam.b.x, beam.b.y);
@@ -248,12 +337,14 @@ export class LevelScene extends Phaser.Scene {
     return { color, hz };
   }
 
-  // Test-mode base draw: brown wood planks from live physics bodies. Always
-  // brown, never color-shifted — stress is its own layer (redrawStressOverlay).
+  // Test-mode base draw: road = thick black, beam = thinner orange.
   redrawBeamBases() {
     this.beamsGraphics.clear();
-    this.beamsGraphics.lineStyle(VIZ.BEAM_BASE_THICKNESS, VIZ.BEAM_BASE_COLOR, 1);
-    for (const { constraint } of physics._beamConstraints) {
+    for (const { constraint, type } of physics._beamConstraints) {
+      const isRoad = type === 'road';
+      this.beamsGraphics.lineStyle(
+        isRoad ? VIZ.ROAD_THICKNESS : VIZ.BEAM_THICKNESS,
+        isRoad ? VIZ.ROAD_COLOR     : VIZ.BEAM_COLOR, 1);
       const aX = constraint.bodyA.position.x, aY = constraint.bodyA.position.y;
       const bX = constraint.bodyB.position.x, bY = constraint.bodyB.position.y;
       this.beamsGraphics.beginPath();
@@ -346,15 +437,11 @@ export class LevelScene extends Phaser.Scene {
       const y = body.position.y;
 
       if (body.label === 'anchor') {
-        // Filled square with 4 rivet dots at the corners.
-        const half = VIZ.ANCHOR_SIZE / 2;
+        // Poly Bridge-style: filled red circle with white ring.
+        this.jointsGraphics.lineStyle(2, 0xffffff, 0.9);
+        this.jointsGraphics.strokeCircle(x, y, VIZ.ANCHOR_RADIUS + 2);
         this.jointsGraphics.fillStyle(VIZ.ANCHOR_COLOR, 1);
-        this.jointsGraphics.fillRect(x - half, y - half, VIZ.ANCHOR_SIZE, VIZ.ANCHOR_SIZE);
-        this.jointsGraphics.fillStyle(0x3a0a0a, 1);
-        const r = half - 3;
-        for (const [dx, dy] of [[-r, -r], [r, -r], [-r, r], [r, r]]) {
-          this.jointsGraphics.fillCircle(x + dx, y + dy, 1.5);
-        }
+        this.jointsGraphics.fillCircle(x, y, VIZ.ANCHOR_RADIUS);
         continue;
       }
 
@@ -389,14 +476,20 @@ export class LevelScene extends Phaser.Scene {
     veh.add(p, 'carDensity', 0.001, 0.05, 0.001).name('Car Density');
     veh.add(p, 'driveSpeed', 1, 8, 0.5).name('Drive Speed (px/f)');
 
-    const mat = gui.addFolder('Material (Wood)');
-    mat.add(p, 'stiffness', 0.05, 1.0, 0.01).name('Stiffness').onChange(v => {
-      this.material.stiffness = v;
-      physics.updateBeamMaterial(v, p.snapThreshold);
+    const road = gui.addFolder('Material (Road)');
+    road.add(p, 'roadStiffness', 0.05, 1.0, 0.01).name('Stiffness').onChange(v => {
+      this.level.materials.road.stiffness = v;
     });
-    mat.add(p, 'snapThreshold', 0.05, 3.0, 0.05).name('Snap Threshold').onChange(v => {
-      this.material.snapThreshold = v;
-      physics.updateBeamMaterial(p.stiffness, v);
+    road.add(p, 'roadSnapThreshold', 0.05, 3.0, 0.05).name('Snap Threshold').onChange(v => {
+      this.level.materials.road.snapThreshold = v;
+    });
+
+    const beam = gui.addFolder('Material (Beam/Wood)');
+    beam.add(p, 'beamStiffness', 0.05, 1.0, 0.01).name('Stiffness').onChange(v => {
+      this.level.materials.wood.stiffness = v;
+    });
+    beam.add(p, 'beamSnapThreshold', 0.05, 3.0, 0.05).name('Snap Threshold').onChange(v => {
+      this.level.materials.wood.snapThreshold = v;
     });
 
     const viz = gui.addFolder('Visual');
@@ -466,7 +559,7 @@ export class LevelScene extends Phaser.Scene {
     for (const beam of this.beams) {
       const matA = physics._nodes.get(beam.a.bodyId);
       const matB = physics._nodes.get(beam.b.bodyId);
-      if (matA && matB) physics.buildBeam(matA, matB, this.material);
+      if (matA && matB) physics.buildBeam(matA, matB, beam.material ?? this.material);
     }
   }
 
@@ -486,6 +579,7 @@ export class LevelScene extends Phaser.Scene {
       // Stop driving once a win/fail is in flight so the car doesn't drift
       // past the result.
       if (!this.testEndAt) physics.driveVehicle();
+      physics.applyBeamWeight();
       physics.applyVehicleLoad();
       physics.evaluateStress(this.time.now, physics.getTimeScale());
       juice.tick(this.time.now, physics.isCascadeActive(this.time.now));

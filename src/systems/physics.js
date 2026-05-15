@@ -62,7 +62,8 @@ const physics = {
         ...this._canyonBodies,
       ];
       for (const b of this._beamConstraints) {
-        toRemove.push(b.constraint, b.body);
+        toRemove.push(b.constraint);
+        if (b.body) toRemove.push(b.body);
         if (b.attachA) toRemove.push(b.attachA);
         if (b.attachB) toRemove.push(b.attachB);
       }
@@ -174,18 +175,29 @@ const physics = {
     // Non-anchor bodies are BEAM_OVERHANG px wider than joint-to-joint length
     // on each end so adjacent beams overlap at junctions, closing the gap the
     // vehicle would otherwise fall through at each mid-joint.
-    const bodyLength = bothStatic ? length : length + 2 * BEAM_OVERHANG;
-    const beamBody = this._scene.matter.add.rectangle(beamCenterX, beamCenterY, bodyLength, thickness, {
-      label: 'beam',
-      angle,
-      isStatic: true,
-      friction: 0.6,
-      restitution: 0,
-      collisionFilter: { category: 0x0004, mask: 0x0001, group: -1 },
-    });
+    // Road segments get a kinematic collision body (vehicle drives on them).
+    // Beam segments (structural) get no collision body — they brace road joints
+    // via the stress constraint only. Vehicle cannot land on a beam.
+    const isRoad = material.type === 'road';
+    let beamBody = null;
+    if (isRoad) {
+      const bodyLength = bothStatic ? length : length + 2 * BEAM_OVERHANG;
+      beamBody = this._scene.matter.add.rectangle(beamCenterX, beamCenterY, bodyLength, thickness, {
+        label: 'beam',
+        angle,
+        isStatic: true,
+        friction: 0.6,
+        restitution: 0,
+        collisionFilter: { category: 0x0004, mask: 0x0001, group: -1 },
+      });
+    }
 
-    // No attach constraints — position is driven kinematically each step.
-    this._beamConstraints.push({ constraint, material, body: beamBody, attachA: null, attachB: null, kinematic: !bothStatic });
+    this._beamConstraints.push({
+      constraint, material, body: beamBody,
+      attachA: null, attachB: null,
+      kinematic: isRoad && !bothStatic,
+      type: material.type,
+    });
     return constraint;
   },
 
@@ -203,7 +215,8 @@ const physics = {
     const idx = this._beamConstraints.findIndex(b => b.constraint === constraint);
     if (idx >= 0) {
       const b = this._beamConstraints[idx];
-      const toRemove = [b.constraint, b.body];
+      const toRemove = [b.constraint];
+      if (b.body) toRemove.push(b.body);
       if (b.attachA) toRemove.push(b.attachA);
       if (b.attachB) toRemove.push(b.attachB);
       this._scene.matter.world.remove(toRemove);
@@ -297,6 +310,9 @@ const physics = {
     const speed = config.driveSpeed ?? 3;
     const vx = config.spawnAt === 'left' ? speed : -speed;
     this._scene.matter.body.setVelocity(chassis, { x: vx, y: chassis.velocity.y });
+    // Zero angular velocity each frame so the car doesn't accumulate rotation
+    // from the angular impulses it receives at beam-to-beam junctions.
+    this._scene.matter.body.setAngularVelocity(chassis, 0);
   },
 
   getVehicleChassisPosition() {
@@ -409,7 +425,7 @@ const physics = {
   // rolls on a stable surface regardless of how the bridge flexes.
   _updateKinematicBeams() {
     for (const b of this._beamConstraints) {
-      if (!b.kinematic) continue;
+      if (!b.kinematic || !b.body) continue;
       const aPos = b.constraint.bodyA.position;
       const bPos = b.constraint.bodyB.position;
       const dx = bPos.x - aPos.x;
@@ -439,7 +455,7 @@ const physics = {
     const weightForce = chassis.mass * engine.gravity.y * (engine.gravity.scale ?? 0.001);
 
     for (const b of this._beamConstraints) {
-      if (!b.kinematic) continue;
+      if (!b.kinematic || b.type !== 'road') continue;
       const bodyA = b.constraint.bodyA;
       const bodyB = b.constraint.bodyB;
       const ax = bodyA.position.x, ay = bodyA.position.y;
@@ -456,6 +472,29 @@ const physics = {
       if (distSq > 80 * 80) continue; // 80px proximity threshold
       this._scene.matter.body.applyForce(bodyA, bodyA.position, { x: 0, y: (1 - t) * weightForce });
       this._scene.matter.body.applyForce(bodyB, bodyB.position, { x: 0, y: t * weightForce });
+    }
+  },
+
+  // Simulate the gravitational weight that road beam bodies would have had when
+  // they were dynamic Matter.js bodies (density 0.001, thickness 30). We apply
+  // half that simulated weight to each joint node so unsupported road segments
+  // visibly sag and fall — restoring the "physical falling" sensation.
+  applyBeamWeight() {
+    if (!this._scene) return;
+    const engine = this._scene.matter.world.engine;
+    const gravForce = engine.gravity.y * (engine.gravity.scale ?? 0.001);
+    for (const b of this._beamConstraints) {
+      if (!b.kinematic || b.type !== 'road') continue;
+      const bodyA = b.constraint.bodyA;
+      const bodyB = b.constraint.bodyB;
+      const dx = bodyB.position.x - bodyA.position.x;
+      const dy = bodyB.position.y - bodyA.position.y;
+      const bodyLength = Math.hypot(dx, dy) + 2 * BEAM_OVERHANG;
+      // Matter.js default density 0.001, thickness 30 — matches old dynamic body
+      const simulatedMass = 0.001 * bodyLength * 30;
+      const halfWeight = 0.5 * simulatedMass * gravForce;
+      this._scene.matter.body.applyForce(bodyA, bodyA.position, { x: 0, y: halfWeight });
+      this._scene.matter.body.applyForce(bodyB, bodyB.position, { x: 0, y: halfWeight });
     }
   },
 };

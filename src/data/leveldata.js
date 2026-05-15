@@ -21,7 +21,8 @@ export const L1 = {
     { type: 'car', spawnAt: 'left', weight: 200, speed: 'normal' },
   ],
   materials: {
-    wood: { stiffness: 0.9, snapThreshold: 1.5 },
+    road: { type: 'road', stiffness: 0.95, snapThreshold: 2.0 },
+    wood: { type: 'beam', stiffness: 0.9,  snapThreshold: 1.5 },
   },
 };
 
@@ -45,7 +46,8 @@ export const DEV_STRESS = {
     { type: 'car', spawnAt: 'left', weight: 2000, speed: 'normal' },
   ],
   materials: {
-    wood: { stiffness: 0.25, snapThreshold: 1.5 },
+    road: { type: 'road', stiffness: 0.95, snapThreshold: 2.0 },
+    wood: { type: 'beam', stiffness: 0.25, snapThreshold: 1.5 },
   },
 };
 
