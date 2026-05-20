@@ -417,6 +417,8 @@ export class LevelScene extends Phaser.Scene {
     this._selectMaterial('road'); // reset to default material
     this.redrawBeams();
     this.redrawJoints(new Map());
+    this._budgetRemaining = this.level.budget;
+    this._updateBudgetDisplay();
   }
 
   handleHover(pointer) {
@@ -680,6 +682,8 @@ export class LevelScene extends Phaser.Scene {
       this.winOverlay?.destroy(); this.winOverlay = null;
       this.failOverlay?.destroy(); this.failOverlay = null;
       this.testEndAt = 0;
+      this._budgetRemaining = this.level.budget;
+      this._updateBudgetDisplay();
     }
   }
 
