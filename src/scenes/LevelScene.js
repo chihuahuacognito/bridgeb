@@ -124,6 +124,7 @@ export class LevelScene extends Phaser.Scene {
 
     this.mode = 'build';                 // 'build' | 'test'
     this.material = this.level.materials.road; // default: road placement
+    this._budgetRemaining = this.level.budget;
     this.beamConstraints = [];           // mirrors physics._beamConstraints, for rendering
 
     this._vehiclePreset = VEHICLE_PRESETS[0].key;
@@ -191,6 +192,9 @@ export class LevelScene extends Phaser.Scene {
     this.testButton = this.add.rectangle(640, 40, 140, 40, 0x2e7d32).setInteractive().setScrollFactor(0);
     this.testButtonLabel = this.add.text(640, 40, 'TEST', { fontSize: '18px', color: '#fff' }).setOrigin(0.5).setScrollFactor(0);
     this.testButton.on('pointerdown', (_p, _lx, _ly, ev) => { ev.stopPropagation(); this.toggleTest(); });
+    this._budgetBg    = this.add.rectangle(800, 40, 130, 40, 0x1a3a2a).setScrollFactor(0);
+    this._budgetLabel = this.add.text(800, 40, `LEFT: ${this.level.budget}`, { fontSize: '16px', color: '#ffffff' })
+      .setOrigin(0.5).setScrollFactor(0);
 
     // Start paused: pause Matter until the player hits TEST.
     physics.setRunnerEnabled(false);
@@ -284,6 +288,28 @@ export class LevelScene extends Phaser.Scene {
     const roadActive = type === 'road';
     this._roadBtn.setFillStyle(roadActive ? VIZ.ROAD_COLOR : 0x444444);
     this._beamBtn.setFillStyle(roadActive ? 0x444444 : VIZ.BEAM_COLOR);
+  }
+
+  _updateBudgetDisplay() {
+    const n = this._budgetRemaining;
+    this._budgetLabel.setText(`LEFT: ${n}`);
+    if (n === 0) {
+      this._budgetLabel.setColor('#ff4444');
+      this._budgetBg.setFillStyle(0x3a1a1a);
+    } else {
+      this._budgetLabel.setColor('#ffffff');
+      this._budgetBg.setFillStyle(0x1a3a2a);
+    }
+  }
+
+  _flashBudget() {
+    this.tweens.add({
+      targets: this._budgetLabel,
+      x: '+=4',
+      yoyo: true,
+      repeat: 3,
+      duration: 40,
+    });
   }
 
   _selectVehicle(key) {
