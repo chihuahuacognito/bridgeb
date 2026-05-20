@@ -310,6 +310,7 @@ export class LevelScene extends Phaser.Scene {
   }
 
   _flashBudget() {
+    this.tweens.killTweensOf(this._budgetLabel);
     this.tweens.add({
       targets: this._budgetLabel,
       x: '+=4',
