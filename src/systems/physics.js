@@ -307,11 +307,20 @@ const physics = {
   driveVehicle() {
     if (!this._vehicle) return;
     const { chassis, config } = this._vehicle;
-    const speed = config.driveSpeed ?? 3;
-    const vx = config.spawnAt === 'left' ? speed : -speed;
-    this._scene.matter.body.setVelocity(chassis, { x: vx, y: chassis.velocity.y });
-    // Zero angular velocity each frame so the car doesn't accumulate rotation
-    // from the angular impulses it receives at beam-to-beam junctions.
+    const dir      = config.spawnAt === 'left' ? 1 : -1;
+    const maxSpeed = config.driveSpeed ?? 3;
+    const gain     = config.driveForceGain ?? 0.001;
+    const vx       = chassis.velocity.x;
+
+    // Apply a proportional drive force toward target speed. Only push — never
+    // brake — so the car coasts freely on downslopes past maxSpeed. On steep
+    // uphills the force is insufficient to overcome gravity and the car stalls.
+    if (dir * vx < maxSpeed) {
+      this._scene.matter.body.applyForce(chassis, chassis.position, {
+        x: dir * (maxSpeed - dir * vx) * gain,
+        y: 0,
+      });
+    }
     this._scene.matter.body.setAngularVelocity(chassis, 0);
   },
 

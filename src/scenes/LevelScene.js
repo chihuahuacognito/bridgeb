@@ -132,6 +132,7 @@ export class LevelScene extends Phaser.Scene {
     this._cheatParams = {
       carDensity:          _vp0.density,
       driveSpeed:          _vp0.driveSpeed,
+      driveForceGain:      0.001,
       roadStiffness:       this.level.materials.road.stiffness,
       roadSnapThreshold:   this.level.materials.road.snapThreshold,
       beamStiffness:       this.level.materials.wood.stiffness,
@@ -612,7 +613,8 @@ export class LevelScene extends Phaser.Scene {
 
     const veh = gui.addFolder('Vehicle  (takes effect at next TEST)');
     this._guiCarDensityCtrl = veh.add(p, 'carDensity', 0.001, 0.05, 0.001).name('Car Density');
-    this._guiDriveSpeedCtrl = veh.add(p, 'driveSpeed', 1, 8, 0.5).name('Drive Speed (px/f)');
+    this._guiDriveSpeedCtrl = veh.add(p, 'driveSpeed', 1, 8, 0.5).name('Drive Speed (target px/f)');
+    veh.add(p, 'driveForceGain', 0.0001, 0.005, 0.0001).name('Drive Force Gain');
 
     const road = gui.addFolder('Material (Road)');
     road.add(p, 'roadStiffness', 0.05, 1.0, 0.01).name('Stiffness').onChange(v => {
@@ -660,8 +662,9 @@ export class LevelScene extends Phaser.Scene {
       physics.setRunnerEnabled(true);   // start simulating
       const vehicleConfig = {
         ...this.level.vehicles[0], // spec §2 rule 3: always an array
-        density:    this._cheatParams.carDensity,
-        driveSpeed: this._cheatParams.driveSpeed,
+        density:        this._cheatParams.carDensity,
+        driveSpeed:     this._cheatParams.driveSpeed,
+        driveForceGain: this._cheatParams.driveForceGain,
       };
       physics.spawnVehicle(vehicleConfig);
       cam.follow(() => physics.getVehicleChassisPosition());
