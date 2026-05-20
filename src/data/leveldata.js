@@ -4,8 +4,8 @@
 export const L1 = {
   id: 'L1',
   title: 'Forces & Gravity',
-  span: 6,                            // metres, used for budget feel
-  budget: 500,
+  span: 6,
+  budget: 30,
   worldWidth: 1280,
   worldHeight: 720,
   canyon: {
@@ -22,8 +22,8 @@ export const L1 = {
   ],
   gravity: { y: 1.5, label: 'Normal' },
   materials: {
-    road: { type: 'road', stiffness: 0.15, snapThreshold: 0.30 },
-    wood: { type: 'beam', stiffness: 0.15, snapThreshold: 0.25 },
+    road: { type: 'road', cost: 2, stiffness: 0.15, snapThreshold: 0.30 },
+    wood: { type: 'beam', cost: 1, stiffness: 0.15, snapThreshold: 0.25 },
   },
 };
 
@@ -48,8 +48,8 @@ export const DEV_STRESS = {
   ],
   gravity: { y: 1.5, label: 'Normal' },
   materials: {
-    road: { type: 'road', stiffness: 0.15, snapThreshold: 0.30 },
-    wood: { type: 'beam', stiffness: 0.15, snapThreshold: 0.25 },
+    road: { type: 'road', cost: 2, stiffness: 0.15, snapThreshold: 0.30 },
+    wood: { type: 'beam', cost: 1, stiffness: 0.15, snapThreshold: 0.25 },
   },
 };
 
