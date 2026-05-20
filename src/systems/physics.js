@@ -25,7 +25,7 @@ const BEAM_OVERHANG = 12;
 // Visual strain saturation point: the stretch ratio at which the visual
 // stress signal reads 1.0. Independent of material.snapThreshold so future
 // snap tuning doesn't break the visualization.
-let VISUAL_FULL_STRAIN = 0.08;
+let VISUAL_FULL_STRAIN = 0.008;
 
 const physics = {
   _scene: null,
@@ -195,7 +195,7 @@ const physics = {
     this._beamConstraints.push({
       constraint, material, body: beamBody,
       attachA: null, attachB: null,
-      kinematic: isRoad && !bothStatic,
+      kinematic: !bothStatic,
       type: material.type,
     });
     return constraint;
@@ -455,7 +455,7 @@ const physics = {
     const weightForce = chassis.mass * engine.gravity.y * (engine.gravity.scale ?? 0.001);
 
     for (const b of this._beamConstraints) {
-      if (!b.kinematic || b.type !== 'road') continue;
+      if (!b.kinematic) continue;
       const bodyA = b.constraint.bodyA;
       const bodyB = b.constraint.bodyB;
       const ax = bodyA.position.x, ay = bodyA.position.y;
@@ -484,14 +484,14 @@ const physics = {
     const engine = this._scene.matter.world.engine;
     const gravForce = engine.gravity.y * (engine.gravity.scale ?? 0.001);
     for (const b of this._beamConstraints) {
-      if (!b.kinematic || b.type !== 'road') continue;
+      if (!b.kinematic) continue;
       const bodyA = b.constraint.bodyA;
       const bodyB = b.constraint.bodyB;
       const dx = bodyB.position.x - bodyA.position.x;
       const dy = bodyB.position.y - bodyA.position.y;
-      const bodyLength = Math.hypot(dx, dy) + 2 * BEAM_OVERHANG;
-      // Matter.js default density 0.001, thickness 30 — matches old dynamic body
-      const simulatedMass = 0.001 * bodyLength * 30;
+      const bodyLength = Math.hypot(dx, dy) + (b.body ? 2 * BEAM_OVERHANG : 0);
+      const beamThickness = b.type === 'road' ? 30 : 4;
+      const simulatedMass = 0.001 * bodyLength * beamThickness;
       const halfWeight = 0.5 * simulatedMass * gravForce;
       this._scene.matter.body.applyForce(bodyA, bodyA.position, { x: 0, y: halfWeight });
       this._scene.matter.body.applyForce(bodyB, bodyB.position, { x: 0, y: halfWeight });

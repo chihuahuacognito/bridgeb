@@ -57,6 +57,12 @@ const VIZ = {
   GRID_STEP:  40,
 };
 
+const VEHICLE_PRESETS = [
+  { key: 'car',   label: 'CAR',   density: 0.003, driveSpeed: 5, color: 0x2277bb },
+  { key: 'truck', label: 'TRUCK', density: 0.008, driveSpeed: 3, color: 0xcc7722 },
+  { key: 'tank',  label: 'TANK',  density: 0.020, driveSpeed: 2, color: 0xaa2222 },
+];
+
 export class LevelScene extends Phaser.Scene {
   constructor() {
     super('LevelScene');
@@ -120,18 +126,20 @@ export class LevelScene extends Phaser.Scene {
     this.material = this.level.materials.road; // default: road placement
     this.beamConstraints = [];           // mirrors physics._beamConstraints, for rendering
 
+    this._vehiclePreset = VEHICLE_PRESETS[0].key;
+    const _vp0 = VEHICLE_PRESETS[0];
     this._cheatParams = {
-      carDensity:          0.008,
-      driveSpeed:          3,
+      carDensity:          _vp0.density,
+      driveSpeed:          _vp0.driveSpeed,
       roadStiffness:       this.level.materials.road.stiffness,
       roadSnapThreshold:   this.level.materials.road.snapThreshold,
       beamStiffness:       this.level.materials.wood.stiffness,
       beamSnapThreshold:   this.level.materials.wood.snapThreshold,
-      visualFullStrain:    0.08,
+      visualFullStrain:    0.008,
       strainMed:           VIZ.STRAIN_MED,
       strainHigh:          VIZ.STRAIN_HIGH,
       strainCrit:          VIZ.STRAIN_CRIT,
-      gravityY:            1.5,
+      gravityY:            this.level.gravity?.y ?? 1.5,
     };
     this._buildCheatGui();
 
@@ -148,6 +156,31 @@ export class LevelScene extends Phaser.Scene {
 
     this.input.keyboard.on('keydown-R', () => this._selectMaterial('road'));
     this.input.keyboard.on('keydown-B', () => this._selectMaterial('beam'));
+
+    // Vehicle preset selector — second toolbar row at y=95 (taller for icon + label).
+    this._vehicleBtns = {};
+    const vpX = [160, 310, 460];
+    VEHICLE_PRESETS.forEach((vp, i) => {
+      const active = vp.key === this._vehiclePreset;
+      const btn = this.add.rectangle(vpX[i], 95, 130, 54, active ? vp.color : 0x444444)
+        .setInteractive().setScrollFactor(0);
+      btn.on('pointerdown', (_p, _lx, _ly, ev) => { ev.stopPropagation(); this._selectVehicle(vp.key); });
+      this._vehicleBtns[vp.key] = btn;
+    });
+    this._drawVehicleIcons(); // silhouettes above buttons
+    VEHICLE_PRESETS.forEach((vp, i) => {  // labels above icons
+      this.add.text(vpX[i], 114, vp.label, { fontSize: '11px', color: '#ffffff' })
+        .setOrigin(0.5).setScrollFactor(0);
+    });
+    this.input.keyboard.on('keydown-ONE',   () => this._selectVehicle('car'));
+    this.input.keyboard.on('keydown-TWO',   () => this._selectVehicle('truck'));
+    this.input.keyboard.on('keydown-THREE', () => this._selectVehicle('tank'));
+
+    // Gravity label — level-baked, shown as a read-only tag next to the vehicle row.
+    const gravLabel = (this.level.gravity?.label ?? 'Normal').toUpperCase() + '-G';
+    this.add.rectangle(640, 95, 130, 54, 0x1a2a3a).setScrollFactor(0);
+    this.add.text(640, 95, gravLabel, { fontSize: '13px', color: '#88aacc' })
+      .setOrigin(0.5).setScrollFactor(0);
 
     // Hard RESET — clears all beams and joints, returns to a clean build state.
     this._resetBtn   = this.add.rectangle(480, 40, 130, 40, 0x8b1a1a).setInteractive().setScrollFactor(0);
@@ -251,6 +284,75 @@ export class LevelScene extends Phaser.Scene {
     const roadActive = type === 'road';
     this._roadBtn.setFillStyle(roadActive ? VIZ.ROAD_COLOR : 0x444444);
     this._beamBtn.setFillStyle(roadActive ? 0x444444 : VIZ.BEAM_COLOR);
+  }
+
+  _selectVehicle(key) {
+    const preset = VEHICLE_PRESETS.find(p => p.key === key);
+    if (!preset) return;
+    this._vehiclePreset = key;
+    this._cheatParams.carDensity  = preset.density;
+    this._cheatParams.driveSpeed  = preset.driveSpeed;
+    // Sync GUI sliders so the dev panel reflects the preset values.
+    this._guiCarDensityCtrl?.updateDisplay();
+    this._guiDriveSpeedCtrl?.updateDisplay();
+    // Highlight the active button, dim the rest.
+    for (const vp of VEHICLE_PRESETS) {
+      this._vehicleBtns[vp.key]?.setFillStyle(vp.key === key ? vp.color : 0x444444);
+    }
+  }
+
+  _drawVehicleIcons() {
+    const gfx = this.add.graphics().setScrollFactor(0);
+    const vpX = [160, 310, 460];
+    const iy = 89; // icon center y within the 130×54 button at y=95
+    this._drawCarIcon(gfx, vpX[0], iy);
+    this._drawTruckIcon(gfx, vpX[1], iy);
+    this._drawTankIcon(gfx, vpX[2], iy);
+  }
+
+  _drawCarIcon(gfx, cx, cy) {
+    // Sedan: lower body + sloped roof + two wheels
+    gfx.fillStyle(0xf08c1a, 1);
+    gfx.fillRect(cx - 33, cy - 6, 66, 13); // body
+    gfx.fillRect(cx - 18, cy - 17, 32, 12); // roof
+    gfx.fillStyle(0x222222, 1);
+    gfx.fillCircle(cx + 21, cy + 8, 8); // front wheel
+    gfx.fillCircle(cx - 21, cy + 8, 8); // rear wheel
+    gfx.fillStyle(0x888888, 1);
+    gfx.fillCircle(cx + 21, cy + 8, 3); // hub
+    gfx.fillCircle(cx - 21, cy + 8, 3);
+  }
+
+  _drawTruckIcon(gfx, cx, cy) {
+    // Delivery truck: cargo box (left/rear) + short cab (right/front) + dual rear wheels
+    gfx.fillStyle(0xcc7722, 1);
+    gfx.fillRect(cx - 38, cy - 17, 44, 25); // cargo box
+    gfx.fillRect(cx + 6, cy - 9, 24, 17);   // cab
+    gfx.fillStyle(0x88bbdd, 1);
+    gfx.fillRect(cx + 20, cy - 8, 7, 7);    // windshield
+    gfx.fillStyle(0x222222, 1);
+    gfx.fillCircle(cx + 18, cy + 9, 7);     // front wheel
+    gfx.fillCircle(cx - 28, cy + 9, 7);     // rear outer
+    gfx.fillCircle(cx - 18, cy + 9, 6);     // rear inner (dual)
+    gfx.fillStyle(0x888888, 1);
+    gfx.fillCircle(cx + 18, cy + 9, 3);
+    gfx.fillCircle(cx - 28, cy + 9, 3);
+    gfx.fillCircle(cx - 18, cy + 9, 2);
+  }
+
+  _drawTankIcon(gfx, cx, cy) {
+    // Military tank: tread + olive hull + turret + barrel
+    gfx.fillStyle(0x222222, 1);
+    gfx.fillRect(cx - 40, cy - 1, 80, 11); // tread band
+    gfx.fillStyle(0x556b2f, 1);            // olive drab
+    gfx.fillRect(cx - 36, cy - 9, 72, 18); // hull
+    gfx.fillRect(cx - 10, cy - 21, 28, 14); // turret
+    gfx.fillStyle(0x3d4f22, 1);
+    gfx.fillRect(cx + 18, cy - 17, 22, 5); // barrel
+    gfx.fillStyle(0x333333, 1);
+    for (let i = -3; i <= 3; i++) {        // tread segments
+      gfx.fillRect(cx + i * 11 - 1, cy - 1, 2, 11);
+    }
   }
 
   // Full hard reset: wipes every beam and joint, exits test mode if running,
@@ -473,14 +575,14 @@ export class LevelScene extends Phaser.Scene {
     this._gui = gui;
 
     const veh = gui.addFolder('Vehicle  (takes effect at next TEST)');
-    veh.add(p, 'carDensity', 0.001, 0.05, 0.001).name('Car Density');
-    veh.add(p, 'driveSpeed', 1, 8, 0.5).name('Drive Speed (px/f)');
+    this._guiCarDensityCtrl = veh.add(p, 'carDensity', 0.001, 0.05, 0.001).name('Car Density');
+    this._guiDriveSpeedCtrl = veh.add(p, 'driveSpeed', 1, 8, 0.5).name('Drive Speed (px/f)');
 
     const road = gui.addFolder('Material (Road)');
     road.add(p, 'roadStiffness', 0.05, 1.0, 0.01).name('Stiffness').onChange(v => {
       this.level.materials.road.stiffness = v;
     });
-    road.add(p, 'roadSnapThreshold', 0.05, 3.0, 0.05).name('Snap Threshold').onChange(v => {
+    road.add(p, 'roadSnapThreshold', 0.001, 0.5, 0.001).name('Snap Threshold').onChange(v => {
       this.level.materials.road.snapThreshold = v;
     });
 
@@ -488,12 +590,12 @@ export class LevelScene extends Phaser.Scene {
     beam.add(p, 'beamStiffness', 0.05, 1.0, 0.01).name('Stiffness').onChange(v => {
       this.level.materials.wood.stiffness = v;
     });
-    beam.add(p, 'beamSnapThreshold', 0.05, 3.0, 0.05).name('Snap Threshold').onChange(v => {
+    beam.add(p, 'beamSnapThreshold', 0.001, 0.5, 0.001).name('Snap Threshold').onChange(v => {
       this.level.materials.wood.snapThreshold = v;
     });
 
     const viz = gui.addFolder('Visual');
-    viz.add(p, 'visualFullStrain', 0.01, 0.5, 0.005).name('Full Strain Sat').onChange(v => {
+    viz.add(p, 'visualFullStrain', 0.001, 0.1, 0.001).name('Full Strain Sat').onChange(v => {
       physics.setVisualFullStrain(v);
     });
     viz.add(p, 'strainMed', 0.01, 0.5, 0.01).name('Strain MED').onChange(v => {
@@ -507,7 +609,7 @@ export class LevelScene extends Phaser.Scene {
     });
 
     const phys = gui.addFolder('Physics');
-    phys.add(p, 'gravityY', 0.5, 10.0, 0.1).name('Gravity Y').onChange(v => {
+    phys.add(p, 'gravityY', 0.5, 10.0, 0.1).name(`Gravity Y  [level: ${this.level.gravity?.label ?? 'Normal'}]`).onChange(v => {
       physics.setGravity(v);
     });
   }
@@ -518,6 +620,7 @@ export class LevelScene extends Phaser.Scene {
       this.mode = 'test';
       this.testButtonLabel.setText('RESET');
       physics.setTimeScale(1.0);
+      physics.setGravity(this._cheatParams.gravityY);
       physics.setRunnerEnabled(true);   // start simulating
       const vehicleConfig = {
         ...this.level.vehicles[0], // spec §2 rule 3: always an array
