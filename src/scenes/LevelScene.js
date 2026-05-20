@@ -264,6 +264,7 @@ export class LevelScene extends Phaser.Scene {
     } else {
       if (this._budgetRemaining < this.material.cost) {
         this._flashBudget();
+        this.pendingJointA = null;
         return;
       }
       const endpoint = p.bodyId ? p : this.registerNewJoint(p);
