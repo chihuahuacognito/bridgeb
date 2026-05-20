@@ -262,11 +262,17 @@ export class LevelScene extends Phaser.Scene {
     if (!this.pendingJointA) {
       this.pendingJointA = p.bodyId ? p : this.registerNewJoint(p);
     } else {
+      if (this._budgetRemaining < this.material.cost) {
+        this._flashBudget();
+        return;
+      }
       const endpoint = p.bodyId ? p : this.registerNewJoint(p);
       const matA = physics._nodes.get(this.pendingJointA.bodyId);
       const matB = physics._nodes.get(endpoint.bodyId);
       physics.buildBeam(matA, matB, this.material);
       this.beams.push({ a: this.pendingJointA, b: endpoint, material: this.material });
+      this._budgetRemaining -= this.material.cost;
+      this._updateBudgetDisplay();
       this.pendingJointA = null;
       this.redrawBeams();
       this.redrawJoints(new Map());
