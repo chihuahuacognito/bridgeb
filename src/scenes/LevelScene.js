@@ -554,8 +554,17 @@ export class LevelScene extends Phaser.Scene {
         const segLen = Math.hypot(bX - aX, bY - aY);
         const strain = physics.readStrainVisual(constraint);
         const sagDepth = strain * segLen * SAG_DEPTH_FACTOR;
-        // ×2 so the curve actually passes through midY+sagDepth at its midpoint
-        this.beamsGraphics.quadraticCurveTo(midX, midY + sagDepth * 2, bX, bY);
+        // Phaser Graphics has no quadraticCurveTo — approximate with 8 line segments.
+        // Quadratic bezier: P0=start, P1=control (midX, midY+sagDepth*2), P2=end
+        const cpX = midX, cpY = midY + sagDepth * 2;
+        const STEPS = 8;
+        for (let i = 1; i <= STEPS; i++) {
+          const t = i / STEPS;
+          const u = 1 - t;
+          const px = u * u * aX + 2 * u * t * cpX + t * t * bX;
+          const py = u * u * aY + 2 * u * t * cpY + t * t * bY;
+          this.beamsGraphics.lineTo(px, py);
+        }
       } else {
         this.beamsGraphics.lineTo(bX, bY);
       }
