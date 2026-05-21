@@ -7,6 +7,10 @@ import audio from '../systems/audio.js';
 import juice from '../systems/juice.js';
 import cam from '../systems/camera.js';
 
+// Flip to false (or gate on build flag) to hide the metrics overlay in production.
+const DEBUG_HUD = true;
+const SAG_DEPTH_FACTOR = 0.10;
+
 const VIZ = {
   // Stress visual thresholds (independent of snap tuning)
   STRAIN_MED:  0.05,
@@ -197,6 +201,21 @@ export class LevelScene extends Phaser.Scene {
     this._budgetLabel = this.add.text(800, 40, `LEFT: ${this.level.budget}`, { fontSize: '16px', color: '#ffffff' })
       .setOrigin(0.5).setScrollFactor(0);
 
+    // Debug HUD — shows live physics metrics in test mode. Toggle with D.
+    if (DEBUG_HUD) {
+      this._debugHudVisible = true;
+      this._debugBg = this.add.rectangle(220, 672, 424, 96, 0x000000, 0.72)
+        .setScrollFactor(0).setDepth(100);
+      this._debugText = this.add.text(12, 628, '', {
+        fontSize: '13px', color: '#00ff88', fontFamily: 'monospace', lineSpacing: 4,
+      }).setScrollFactor(0).setDepth(101);
+      this.input.keyboard.on('keydown-D', () => {
+        this._debugHudVisible = !this._debugHudVisible;
+        this._debugBg.setVisible(this._debugHudVisible);
+        this._debugText.setVisible(this._debugHudVisible);
+      });
+    }
+
     // Start paused: pause Matter until the player hits TEST.
     physics.setRunnerEnabled(false);
     this.redrawJoints(new Map());
@@ -308,6 +327,21 @@ export class LevelScene extends Phaser.Scene {
       this._budgetLabel.setColor('#ffffff');
       this._budgetBg.setFillStyle(0x1a3a2a);
     }
+  }
+
+  _updateDebugHud() {
+    if (!this._debugText) return;
+    const info = physics.getDebugInfo();
+    if (!info) { this._debugText.setText('no vehicle'); return; }
+    const { vx, vy, speed, angleDeg, angVelDeg, driveForce, accel, slopeDeg, closestDist } = info;
+    const accelStr = (accel >= 0 ? '+' : '') + accel.toFixed(3);
+    const slopeStr = slopeDeg != null ? slopeDeg.toFixed(1) + '°' : '--';
+    this._debugText.setText([
+      `SPD ${speed.toFixed(2)}  VX ${vx.toFixed(2)}  VY ${vy.toFixed(2)}`,
+      `ACCEL ${accelStr}/tick   DRIVE ${driveForce.toExponential(2)}`,
+      `CHASSIS ${angleDeg.toFixed(1)}°  ANGVEL ${angVelDeg.toFixed(2)}°/tick`,
+      `SLOPE ${slopeStr}  BEAM-DIST ${closestDist.toFixed(0)}px    [D] toggle`,
+    ].join('\n'));
   }
 
   _flashBudget() {
@@ -476,7 +510,8 @@ export class LevelScene extends Phaser.Scene {
     return { color, hz };
   }
 
-  // Test-mode base draw: road = thick black, beam = thinner orange.
+  // Test-mode base draw: road = thick black bezier curve (droops with strain),
+  // beam = thinner orange straight line.
   redrawBeamBases() {
     this.beamsGraphics.clear();
     for (const { constraint, type } of physics._beamConstraints) {
@@ -486,9 +521,19 @@ export class LevelScene extends Phaser.Scene {
         isRoad ? VIZ.ROAD_COLOR     : VIZ.BEAM_COLOR, 1);
       const aX = constraint.bodyA.position.x, aY = constraint.bodyA.position.y;
       const bX = constraint.bodyB.position.x, bY = constraint.bodyB.position.y;
+      const midX = (aX + bX) / 2;
+      const midY = (aY + bY) / 2;
       this.beamsGraphics.beginPath();
       this.beamsGraphics.moveTo(aX, aY);
-      this.beamsGraphics.lineTo(bX, bY);
+      if (isRoad) {
+        const segLen = Math.hypot(bX - aX, bY - aY);
+        const strain = physics.readStrainVisual(constraint);
+        const sagDepth = strain * segLen * SAG_DEPTH_FACTOR;
+        // ×2 so the curve actually passes through midY+sagDepth at its midpoint
+        this.beamsGraphics.quadraticCurveTo(midX, midY + sagDepth * 2, bX, bY);
+      } else {
+        this.beamsGraphics.lineTo(bX, bY);
+      }
       this.beamsGraphics.strokePath();
     }
   }
@@ -733,6 +778,7 @@ export class LevelScene extends Phaser.Scene {
       this._jointStrain = this.redrawStressOverlay();
       this.redrawJoints(this._jointStrain);
       this.redrawVehicle();
+      if (DEBUG_HUD && this._debugHudVisible) this._updateDebugHud();
       this.checkWin();
       this.checkFall();
       // Auto-return to build mode after the result has been on screen ~1.5s.
