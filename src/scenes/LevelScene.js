@@ -28,16 +28,18 @@ const VIZ = {
   // Kept for stress overlay reuse
   BEAM_BASE_THICKNESS: 6,
 
-  // Stress overlay
-  OVERLAY_COLOR_MED:  0xffd24a,
-  OVERLAY_COLOR_HIGH: 0xff8a1f,
-  OVERLAY_COLOR_CRIT: 0xff2e2e,
-  OVERLAY_THICKNESS_BONUS: 6,
+  // Stress overlay — traffic-light colour progression (green → yellow → red)
+  OVERLAY_COLOR_MED:  0x44ff44,   // bright green
+  OVERLAY_COLOR_HIGH: 0xffee00,   // bright yellow
+  OVERLAY_COLOR_CRIT: 0xff1111,   // red
+  OVERLAY_THICKNESS_BONUS: 3,     // MED stage bonus px
+  OVERLAY_THICKNESS_HIGH:  8,     // HIGH stage bonus px
+  OVERLAY_THICKNESS_CRIT:  14,    // CRIT stage bonus px
   OVERLAY_ALPHA_BASE: 0.50,
   OVERLAY_ALPHA_PULSE: 0.45,
   PULSE_HZ_MED:  2.0,
   PULSE_HZ_HIGH: 4.5,
-  PULSE_HZ_CRIT: 8.0,
+  PULSE_HZ_CRIT: 2.0,             // slow glow — 8Hz was a photosensitivity risk
 
   // Crack hatching at CRIT
   CRACK_COUNT: 6,
@@ -50,8 +52,9 @@ const VIZ = {
   JOINT_COLOR: 0xf5d400,
   JOINT_RADIUS: 7,
   JOINT_RING_COLOR: 0xc8aa00,
-  JOINT_GLOW_COLOR_HIGH: 0xff8a1f,
-  JOINT_GLOW_COLOR_CRIT: 0xff2e2e,
+  JOINT_GLOW_COLOR_MED:  0x44ff44,
+  JOINT_GLOW_COLOR_HIGH: 0xffee00,
+  JOINT_GLOW_COLOR_CRIT: 0xff1111,
   JOINT_GLOW_RADIUS_MAX: 22,
   JOINT_GLOW_ALPHA_MAX: 0.55,
 
@@ -496,18 +499,21 @@ export class LevelScene extends Phaser.Scene {
   // Returns null if below STRAIN_MED (no overlay).
   overlayStyleForStrain(s) {
     if (s < VIZ.STRAIN_MED) return null;
-    let color, hz;
+    let color, hz, thickness;
     if (s < VIZ.STRAIN_HIGH) {
       color = VIZ.OVERLAY_COLOR_MED;
       hz = VIZ.PULSE_HZ_MED;
+      thickness = VIZ.BEAM_BASE_THICKNESS + VIZ.OVERLAY_THICKNESS_BONUS;
     } else if (s < VIZ.STRAIN_CRIT) {
       color = VIZ.OVERLAY_COLOR_HIGH;
       hz = VIZ.PULSE_HZ_HIGH;
+      thickness = VIZ.BEAM_BASE_THICKNESS + VIZ.OVERLAY_THICKNESS_HIGH;
     } else {
       color = VIZ.OVERLAY_COLOR_CRIT;
       hz = VIZ.PULSE_HZ_CRIT;
+      thickness = VIZ.BEAM_BASE_THICKNESS + VIZ.OVERLAY_THICKNESS_CRIT;
     }
-    return { color, hz };
+    return { color, hz, thickness };
   }
 
   // Test-mode base draw: road = thick black bezier curve (droops with strain),
@@ -575,7 +581,7 @@ export class LevelScene extends Phaser.Scene {
 
       const alpha = VIZ.OVERLAY_ALPHA_BASE
         + VIZ.OVERLAY_ALPHA_PULSE * 0.5 * (1 + Math.sin(2 * Math.PI * style.hz * t));
-      const thickness = VIZ.BEAM_BASE_THICKNESS + VIZ.OVERLAY_THICKNESS_BONUS * s;
+      const thickness = style.thickness;
 
       this.stressGraphics.lineStyle(thickness, style.color, alpha);
       this.stressGraphics.beginPath();
@@ -632,15 +638,22 @@ export class LevelScene extends Phaser.Scene {
       // Mid-joint pin: optional glow first (so pin draws on top), then ring,
       // then filled pin.
       const s = jointStrain.get(body) ?? 0;
-      if (s >= VIZ.STRAIN_HIGH) {
-        const denom = Math.max(VIZ.STRAIN_CRIT - VIZ.STRAIN_HIGH, 0.0001);
-        const t = Math.min(1, Math.max(0, (s - VIZ.STRAIN_HIGH) / denom));
-        const glowColor = Phaser.Display.Color.Interpolate.ColorWithColor(
-          Phaser.Display.Color.IntegerToColor(VIZ.JOINT_GLOW_COLOR_HIGH),
-          Phaser.Display.Color.IntegerToColor(VIZ.JOINT_GLOW_COLOR_CRIT),
-          100, Math.round(t * 100)
-        );
-        const glowInt = (glowColor.r << 16) | (glowColor.g << 8) | glowColor.b;
+      if (s >= VIZ.STRAIN_MED) {
+        let glowInt;
+        if (s < VIZ.STRAIN_HIGH) {
+          glowInt = VIZ.JOINT_GLOW_COLOR_MED;
+        } else if (s < VIZ.STRAIN_CRIT) {
+          const denom = Math.max(VIZ.STRAIN_CRIT - VIZ.STRAIN_HIGH, 0.0001);
+          const t = Math.min(1, Math.max(0, (s - VIZ.STRAIN_HIGH) / denom));
+          const gc = Phaser.Display.Color.Interpolate.ColorWithColor(
+            Phaser.Display.Color.IntegerToColor(VIZ.JOINT_GLOW_COLOR_HIGH),
+            Phaser.Display.Color.IntegerToColor(VIZ.JOINT_GLOW_COLOR_CRIT),
+            100, Math.round(t * 100)
+          );
+          glowInt = (gc.r << 16) | (gc.g << 8) | gc.b;
+        } else {
+          glowInt = VIZ.JOINT_GLOW_COLOR_CRIT;
+        }
         this.jointsGraphics.fillStyle(glowInt, VIZ.JOINT_GLOW_ALPHA_MAX * s);
         this.jointsGraphics.fillCircle(x, y, VIZ.JOINT_GLOW_RADIUS_MAX * s);
       }
