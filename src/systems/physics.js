@@ -18,9 +18,10 @@
 
 const MIN_REST_LEN = 4;
 const SNAP_ABS_PX  = 8;
-// Each dynamic beam body extends this many px past each joint endpoint so
-// adjacent beams overlap at junctions, closing the gap the vehicle falls into.
-const BEAM_OVERHANG = 12;
+// Overhang of 0: no extension past joint endpoints. Extending beams past nodes
+// causes crossing rectangles at angled junctions, which block the vehicle.
+// The 80px chassis bridges any sub-8px node gap without needing overlap.
+const BEAM_OVERHANG = 0;
 
 // Visual strain saturation point: the stretch ratio at which the visual
 // stress signal reads 1.0. Independent of material.snapThreshold so future
@@ -95,7 +96,7 @@ const physics = {
     const body = this._scene.matter.add.circle(x, y, 4, {
       isStatic: !!isAnchor,
       label: isAnchor ? 'anchor' : 'joint',
-      density: 0.05,
+      density: 0.10,
       collisionFilter: { category: 0x0002, mask: 0x0000 }, // BRIDGE category, no collisions with vehicle yet
       render: { fillStyle: isAnchor ? '#ff3b3b' : '#9b6b3a' },
     });
@@ -147,7 +148,7 @@ const physics = {
 
     // (1) Stress constraint between joints — unchanged behavior.
     const constraint = this._scene.matter.add.constraint(
-      bodyA, bodyB, length, material.stiffness, { damping: 0.05 }
+      bodyA, bodyB, length, material.stiffness, { damping: 0.08 }
     );
     constraint.material = material;
     constraint._stressHistory = [];
@@ -297,6 +298,7 @@ const physics = {
       density: config.density ?? 0.008,
       restitution: 0,
       friction: 0.6,
+      chamfer: { radius: 6 },
       collisionFilter: { category: 0x0001, mask: 0xFFFF & ~0x0002 },
     });
 
@@ -321,7 +323,58 @@ const physics = {
         y: 0,
       });
     }
-    this._scene.matter.body.setAngularVelocity(chassis, 0);
+
+    // Damp angular velocity rather than zeroing it. Hard-zeroing prevented the
+    // chassis from tipping its nose at slope junctions, causing it to stall
+    // at every peak node. Heavy damping (30% retained) still prevents spinning
+    // while allowing enough rotation to navigate angle transitions.
+    this._scene.matter.body.setAngularVelocity(chassis, chassis.angularVelocity * 0.3);
+  },
+
+  getDebugInfo() {
+    if (!this._vehicle) return null;
+    const chassis = this._vehicle.chassis;
+    const vx = chassis.velocity.x;
+    const vy = chassis.velocity.y;
+    const speed = Math.hypot(vx, vy);
+    const angleDeg = chassis.angle * 180 / Math.PI;
+    const angVelDeg = chassis.angularVelocity * 180 / Math.PI;
+
+    const dir = this._vehicle.config.spawnAt === 'left' ? 1 : -1;
+    const maxSpeed = this._vehicle.config.driveSpeed ?? 3;
+    const gain = this._vehicle.config.driveForceGain ?? 0.001;
+    const driveForce = (dir * vx < maxSpeed)
+      ? dir * (maxSpeed - dir * vx) * gain
+      : 0;
+
+    // Per-tick acceleration from previous frame's velocity
+    const prevVx = this._vehicle._dbgPrevVx ?? vx;
+    const prevVy = this._vehicle._dbgPrevVy ?? vy;
+    this._vehicle._dbgPrevVx = vx;
+    this._vehicle._dbgPrevVy = vy;
+    const accelX = vx - prevVx;
+    const accelY = vy - prevVy;
+    const accel  = Math.hypot(accelX, accelY) * Math.sign(accelX * dir);
+
+    // Nearest beam slope angle
+    const carX = chassis.position.x, carY = chassis.position.y;
+    let slopeDeg = null, closestDist = Infinity;
+    for (const b of this._beamConstraints) {
+      if (!b.kinematic) continue;
+      const ax = b.constraint.bodyA.position.x, ay = b.constraint.bodyA.position.y;
+      const bx = b.constraint.bodyB.position.x, by = b.constraint.bodyB.position.y;
+      const dx = bx - ax, dy = by - ay;
+      const lenSq = dx * dx + dy * dy;
+      if (lenSq < 1) continue;
+      const t = Math.max(0, Math.min(1, ((carX - ax) * dx + (carY - ay) * dy) / lenSq));
+      const dist = Math.hypot(carX - (ax + t * dx), carY - (ay + t * dy));
+      if (dist < closestDist) {
+        closestDist = dist;
+        slopeDeg = Math.atan2(dy, dx) * 180 / Math.PI;
+      }
+    }
+
+    return { vx, vy, speed, angleDeg, angVelDeg, driveForce, accel, slopeDeg, closestDist };
   },
 
   getVehicleChassisPosition() {

@@ -5,7 +5,7 @@ export const L1 = {
   id: 'L1',
   title: 'Forces & Gravity',
   span: 6,
-  budget: 30,
+  budget: 16,
   worldWidth: 1280,
   worldHeight: 720,
   canyon: {
@@ -22,7 +22,7 @@ export const L1 = {
   ],
   gravity: { y: 1.5, label: 'Normal' },
   materials: {
-    road: { type: 'road', cost: 2, stiffness: 0.15, snapThreshold: 0.30 },
+    road: { type: 'road', cost: 2, stiffness: 0.08, snapThreshold: 0.50 },
     wood: { type: 'beam', cost: 1, stiffness: 0.15, snapThreshold: 0.25 },
   },
 };
@@ -31,7 +31,7 @@ export const DEV_STRESS = {
   id: 'DEV_STRESS',
   title: 'Dev — Stress Test',
   span: 6,
-  budget: 9999,
+  budget: 40,
   worldWidth: 1280,
   worldHeight: 720,
   canyon: {
@@ -48,7 +48,7 @@ export const DEV_STRESS = {
   ],
   gravity: { y: 1.5, label: 'Normal' },
   materials: {
-    road: { type: 'road', cost: 2, stiffness: 0.15, snapThreshold: 0.30 },
+    road: { type: 'road', cost: 2, stiffness: 0.08, snapThreshold: 0.50 },
     wood: { type: 'beam', cost: 1, stiffness: 0.15, snapThreshold: 0.25 },
   },
 };
