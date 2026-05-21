@@ -82,6 +82,7 @@ export class LevelScene extends Phaser.Scene {
     this.pendingJointA = null;
     this.joints = this.level.anchors.map(a => ({ x: a.x, y: a.y, isAnchor: true, bodyId: a.id }));
     this.SNAP_RADIUS = 20;
+    this._firstBreakPos = null;
   }
 
   create() {
@@ -118,11 +119,28 @@ export class LevelScene extends Phaser.Scene {
 
     physics.setOnSnap((c) => {
       juice.onSnap(this.time.now);
-      // Punch-in on the snap midpoint
       const mx = (c.bodyA.position.x + c.bodyB.position.x) / 2;
       const my = (c.bodyA.position.y + c.bodyB.position.y) / 2;
       cam.punchIn(mx, my, this.time.now);
       audio.stopCreak(c);
+
+      // First-break marker — set only on the first snap in this test run.
+      if (!this._firstBreakPos) this._firstBreakPos = { x: mx, y: my };
+
+      // Snap flash: dedicated Arc game object so it survives handleHover()
+      // clearing snapGraphics every mouse move.
+      const flash = this.add.arc(mx, my, 1, 0, 360, false, 0xffffff, 1);
+      flash.setDepth(20);
+      this.tweens.add({
+        targets: flash,
+        scaleX: 30,
+        scaleY: 30,
+        alpha: 0,
+        duration: 150,
+        ease: 'Linear',
+        onComplete: () => flash.destroy(),
+      });
+
       this.onBeamSnapped();
     });
     this.winOverlay = null;
@@ -453,6 +471,7 @@ export class LevelScene extends Phaser.Scene {
     this.ghostGraphics.clear();
     this.snapGraphics.clear();
     this._jointStrain = null;
+    this._firstBreakPos = null;
     this._selectMaterial('road'); // reset to default material
     this.redrawBeams();
     this.redrawJoints(new Map());
@@ -664,6 +683,24 @@ export class LevelScene extends Phaser.Scene {
     }
   }
 
+  // Draws a persistent red X at the first snap point. Cleared each frame and
+  // redrawn so the marker survives handleHover() clearing snapGraphics.
+  redrawSnapMarkers() {
+    this.snapGraphics.clear();
+    if (!this._firstBreakPos) return;
+    const { x, y } = this._firstBreakPos;
+    const half = 10;
+    this.snapGraphics.lineStyle(3, 0xff2222, 1);
+    this.snapGraphics.beginPath();
+    this.snapGraphics.moveTo(x - half, y - half);
+    this.snapGraphics.lineTo(x + half, y + half);
+    this.snapGraphics.strokePath();
+    this.snapGraphics.beginPath();
+    this.snapGraphics.moveTo(x + half, y - half);
+    this.snapGraphics.lineTo(x - half, y + half);
+    this.snapGraphics.strokePath();
+  }
+
   _buildCheatGui() {
     const p = this._cheatParams;
     const gui = new GUI({ width: 280, title: 'Cheat Panel' });
@@ -739,6 +776,7 @@ export class LevelScene extends Phaser.Scene {
       this.vehicleGraphics?.clear();
       this.stressGraphics.clear();
       this._jointStrain = null;
+      this._firstBreakPos = null;
       this.redrawBeams();
       this.redrawJoints(new Map());
       this.winOverlay?.destroy(); this.winOverlay = null;
@@ -773,6 +811,7 @@ export class LevelScene extends Phaser.Scene {
     this.joints = this.level.anchors.map(
       a => ({ x: a.x, y: a.y, isAnchor: true, bodyId: a.id })
     );
+    this._firstBreakPos = null;
   }
 
   update() {
@@ -790,6 +829,7 @@ export class LevelScene extends Phaser.Scene {
       this.redrawBeamBases();
       this._jointStrain = this.redrawStressOverlay();
       this.redrawJoints(this._jointStrain);
+      this.redrawSnapMarkers();
       this.redrawVehicle();
       if (DEBUG_HUD && this._debugHudVisible) this._updateDebugHud();
       this.checkWin();
