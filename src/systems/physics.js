@@ -26,10 +26,10 @@ const BEAM_OVERHANG = 0;
 // Visual strain saturation point: the stretch ratio at which the visual
 // stress signal reads 1.0. Independent of material.snapThreshold so future
 // snap tuning doesn't break the visualization.
-// Calibrated so a 5px joint sag on a 150px segment reads as ~0.25 visual strain
-// (HIGH stage). Lower = more sensitive. Original 0.008 was too coarse for the
-// actual displacements the spring/gravity balance produces.
-let VISUAL_FULL_STRAIN = 0.002;
+// Calibrated to match road snapThreshold (0.065) so the colour progression
+// covers the full sag range before snap: MED green at ~25px sag, HIGH yellow
+// at ~40px, CRIT red at ~53px, snap at ~56px on a typical 150px half-span.
+let VISUAL_FULL_STRAIN = 0.05;
 
 const physics = {
   _scene: null,
@@ -394,7 +394,9 @@ const physics = {
       return Math.min(1, Math.max(0, raw / c.material.snapThreshold));
     }
     const denom = Math.max(c.length, MIN_REST_LEN);
-    const raw = c.stiffness * Math.abs(cur - c.length) / denom;
+    // No stiffness factor: snapThreshold is directly "snap at X% stretch".
+    // Including c.stiffness made snap require ~200% stretch — physically impossible.
+    const raw = Math.abs(cur - c.length) / denom;
     return Math.min(1, Math.max(0, raw / c.material.snapThreshold));
   },
 
