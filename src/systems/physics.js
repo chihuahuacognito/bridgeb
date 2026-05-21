@@ -26,7 +26,10 @@ const BEAM_OVERHANG = 0;
 // Visual strain saturation point: the stretch ratio at which the visual
 // stress signal reads 1.0. Independent of material.snapThreshold so future
 // snap tuning doesn't break the visualization.
-let VISUAL_FULL_STRAIN = 0.008;
+// Calibrated so a 5px joint sag on a 150px segment reads as ~0.25 visual strain
+// (HIGH stage). Lower = more sensitive. Original 0.008 was too coarse for the
+// actual displacements the spring/gravity balance produces.
+let VISUAL_FULL_STRAIN = 0.002;
 
 const physics = {
   _scene: null,

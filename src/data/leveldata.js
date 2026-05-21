@@ -22,7 +22,7 @@ export const L1 = {
   ],
   gravity: { y: 1.5, label: 'Normal' },
   materials: {
-    road: { type: 'road', cost: 2, stiffness: 0.08, snapThreshold: 0.50 },
+    road: { type: 'road', cost: 2, stiffness: 0.08, snapThreshold: 0.16 },
     wood: { type: 'beam', cost: 1, stiffness: 0.15, snapThreshold: 0.25 },
   },
 };
@@ -48,7 +48,7 @@ export const DEV_STRESS = {
   ],
   gravity: { y: 1.5, label: 'Normal' },
   materials: {
-    road: { type: 'road', cost: 2, stiffness: 0.08, snapThreshold: 0.50 },
+    road: { type: 'road', cost: 2, stiffness: 0.08, snapThreshold: 0.16 },
     wood: { type: 'beam', cost: 1, stiffness: 0.15, snapThreshold: 0.25 },
   },
 };
