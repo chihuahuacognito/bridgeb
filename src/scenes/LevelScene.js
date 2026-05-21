@@ -83,6 +83,7 @@ export class LevelScene extends Phaser.Scene {
     this.joints = this.level.anchors.map(a => ({ x: a.x, y: a.y, isAnchor: true, bodyId: a.id }));
     this.SNAP_RADIUS = 20;
     this._firstBreakPos = null;
+    this._debris = [];
   }
 
   create() {
@@ -97,6 +98,7 @@ export class LevelScene extends Phaser.Scene {
     this.vehicleGraphics = this.add.graphics(); // vehicle chassis + visual wheels
     this.ghostGraphics   = this.add.graphics();
     this.snapGraphics    = this.add.graphics();
+    this._debrisGfx      = this.add.graphics().setDepth(5);
     this.snapTarget = null;
 
     this.input.on('pointerdown', (pointer) => this.handleClick(pointer));
@@ -118,29 +120,14 @@ export class LevelScene extends Phaser.Scene {
     cam.attach(this);
 
     physics.setOnSnap((c) => {
-      juice.onSnap(this.time.now);
       const mx = (c.bodyA.position.x + c.bodyB.position.x) / 2;
       const my = (c.bodyA.position.y + c.bodyB.position.y) / 2;
-      cam.punchIn(mx, my, this.time.now);
       audio.stopCreak(c);
 
       // First-break marker — set only on the first snap in this test run.
       if (!this._firstBreakPos) this._firstBreakPos = { x: mx, y: my };
 
-      // Snap flash: dedicated Arc game object so it survives handleHover()
-      // clearing snapGraphics every mouse move.
-      const flash = this.add.arc(mx, my, 1, 0, 360, false, 0xffffff, 1);
-      flash.setDepth(20);
-      this.tweens.add({
-        targets: flash,
-        scaleX: 30,
-        scaleY: 30,
-        alpha: 0,
-        duration: 150,
-        ease: 'Linear',
-        onComplete: () => flash.destroy(),
-      });
-
+      this._spawnDebris(c);
       this.onBeamSnapped();
     });
     this.winOverlay = null;
@@ -162,13 +149,14 @@ export class LevelScene extends Phaser.Scene {
       roadSnapThreshold:   this.level.materials.road.snapThreshold,
       beamStiffness:       this.level.materials.wood.stiffness,
       beamSnapThreshold:   this.level.materials.wood.snapThreshold,
-      visualFullStrain:    0.008,
+      visualFullStrain:    0.05,
       strainMed:           VIZ.STRAIN_MED,
       strainHigh:          VIZ.STRAIN_HIGH,
       strainCrit:          VIZ.STRAIN_CRIT,
       gravityY:            this.level.gravity?.y ?? 1.5,
     };
     this._buildCheatGui();
+    physics.setVisualFullStrain(this._cheatParams.visualFullStrain);
 
     // Material selector — ROAD (black) and BEAM (orange).
     // stopPropagation prevents the click from also firing the scene's pointerdown
@@ -470,6 +458,8 @@ export class LevelScene extends Phaser.Scene {
     this.stressGraphics.clear();
     this.ghostGraphics.clear();
     this.snapGraphics.clear();
+    this._debrisGfx.clear();
+    this._debris = [];
     this._jointStrain = null;
     this._firstBreakPos = null;
     this._selectMaterial('road'); // reset to default material
@@ -710,6 +700,70 @@ export class LevelScene extends Phaser.Scene {
     this.snapGraphics.strokePath();
   }
 
+  // Spawn rectangular debris chunks when a beam snaps.
+  _spawnDebris(c) {
+    const ax = c.bodyA.position.x, ay = c.bodyA.position.y;
+    const bx = c.bodyB.position.x, by = c.bodyB.position.y;
+    const segLen = Math.hypot(bx - ax, by - ay);
+    if (segLen < 4) return;
+    const segAngle = Math.atan2(by - ay, bx - ax);
+    const isRoad = c.material?.type === 'road';
+    const color  = isRoad ? 0x3a3a3a : 0x7a5c2e;
+    const pieceH = isRoad ? 14 : 7;
+    const N = Math.max(2, Math.min(5, Math.round(segLen / 80)));
+
+    for (let i = 0; i < N; i++) {
+      const t  = (i + 0.5) / N;
+      const cx = ax + (bx - ax) * t;
+      const cy = ay + (by - ay) * t;
+      const pw = (segLen / N) * 0.80;
+
+      // Half the pieces fly one way perpendicular to the beam, half the other.
+      const sign = Math.random() > 0.5 ? 1 : -1;
+      const perpSpeed = 0.06 + Math.random() * 0.22;
+      const vx = -Math.sin(segAngle) * perpSpeed * sign + (Math.random() - 0.5) * 0.06;
+      const vy =  Math.cos(segAngle) * perpSpeed * sign + (Math.random() - 0.5) * 0.06;
+      const angVel = (Math.random() - 0.5) * 0.008; // rad/ms
+      const life   = 1500 + Math.random() * 1000;
+
+      this._debris.push({ x: cx, y: cy, w: pw, h: pieceH,
+        angle: segAngle, vx, vy, angVel, color, life, maxLife: life });
+    }
+  }
+
+  _updateDebris(delta) {
+    const GRAV   = 0.0005; // px/ms² — gentler than game gravity so pieces drift visibly
+    const waterY = this.level?.canyon?.waterY ?? 900;
+    for (let i = this._debris.length - 1; i >= 0; i--) {
+      const d = this._debris[i];
+      d.vy    += GRAV * delta;
+      d.x     += d.vx * delta;
+      d.y     += d.vy * delta;
+      d.angle += d.angVel * delta;
+      d.life  -= delta;
+      if (d.life <= 0 || d.y > waterY + 40) this._debris.splice(i, 1);
+    }
+  }
+
+  _drawDebris() {
+    this._debrisGfx.clear();
+    for (const d of this._debris) {
+      const alpha  = Math.max(0, d.life / d.maxLife);
+      const cos = Math.cos(d.angle), sin = Math.sin(d.angle);
+      const hw = d.w / 2, hh = d.h / 2;
+      const corners = [
+        { x: d.x + (-hw) * cos - (-hh) * sin, y: d.y + (-hw) * sin + (-hh) * cos },
+        { x: d.x +   hw  * cos - (-hh) * sin, y: d.y +   hw  * sin + (-hh) * cos },
+        { x: d.x +   hw  * cos -   hh  * sin, y: d.y +   hw  * sin +   hh  * cos },
+        { x: d.x + (-hw) * cos -   hh  * sin, y: d.y + (-hw) * sin +   hh  * cos },
+      ];
+      this._debrisGfx.fillStyle(d.color, alpha);
+      this._debrisGfx.fillPoints(corners, true);
+      this._debrisGfx.lineStyle(1.5, 0xbbbbbb, alpha * 0.45);
+      this._debrisGfx.strokePoints(corners, true);
+    }
+  }
+
   _buildCheatGui() {
     const p = this._cheatParams;
     const gui = new GUI({ width: 280, title: 'Cheat Panel' });
@@ -777,6 +831,7 @@ export class LevelScene extends Phaser.Scene {
       juice.reset();
       this.rebuildBridge();
       cam.follow(null);
+      this.cameras.main.setZoom(1.0);
       this.cameras.main.scrollX = 0;
       this.cameras.main.scrollY = 0;
       this.mode = 'build';
@@ -786,6 +841,8 @@ export class LevelScene extends Phaser.Scene {
       this.stressGraphics.clear();
       this._jointStrain = null;
       this._firstBreakPos = null;
+      this._debris = [];
+      this._debrisGfx.clear();
       this.redrawBeams();
       this.redrawJoints(new Map());
       this.winOverlay?.destroy(); this.winOverlay = null;
@@ -821,9 +878,15 @@ export class LevelScene extends Phaser.Scene {
       a => ({ x: a.x, y: a.y, isAnchor: true, bodyId: a.id })
     );
     this._firstBreakPos = null;
+    this._debris = [];
   }
 
-  update() {
+  update(_time, delta) {
+    // Debris continues falling across mode transitions so pieces finish even
+    // after the test ends and the fail overlay appears.
+    this._updateDebris(delta);
+    this._drawDebris();
+
     if (this.mode === 'test') {
       physics.tickWatchdog();
       // Stop driving once a win/fail is in flight so the car doesn't drift
@@ -880,6 +943,7 @@ export class LevelScene extends Phaser.Scene {
   }
 
   showFail() {
+    cam.follow(null); // stop chasing the vehicle as it falls through the broken bridge
     this.failOverlay = this.add.text(640, 360, 'BRIDGE FAILED',
       { fontSize: '64px', color: '#ff3333', fontStyle: 'bold' })
       .setOrigin(0.5).setScrollFactor(0);

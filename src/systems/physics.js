@@ -155,6 +155,7 @@ const physics = {
     );
     constraint.material = material;
     constraint._stressHistory = [];
+    constraint._critSinceMs = -1; // ms timestamp when stress first hit ≥ 1.0; -1 = not at crit
 
     // (2) Collision body. Static plank if anchor-to-anchor (cheapest, perfect
     // collision surface, zero pushback). Otherwise dynamic with stiff pins.
@@ -441,14 +442,22 @@ const physics = {
 
   // Called once per tick (from LevelScene.update during test mode).
   evaluateStress(nowMs, timeScale = 1.0) {
-    const STAGGER_MS = 100;
+    // How long a constraint must stay at full stress before it snaps.
+    // Gives the player 2.5 s of visible sag + CRIT overlay before the first break.
+    const SNAP_HOLD_MS = 2500;
+    const STAGGER_MS = 400; // gap between cascade snaps — long enough to watch each piece fall
     const SETTLE_MS  = 200;
 
-    // 1. READ-ONLY pass — collect candidates
+    // 1. READ-ONLY pass — accumulate time-at-crit; queue snap when hold expires
     for (const { constraint } of this._beamConstraints) {
-      const s = this.readStressSmoothed(constraint);
-      if (s >= 1.0 && !this._pendingSnaps.includes(constraint)) {
-        this._pendingSnaps.push(constraint);
+      const s = this.readStressNormalized(constraint);
+      if (s >= 1.0) {
+        if (constraint._critSinceMs < 0) constraint._critSinceMs = nowMs;
+        if (nowMs - constraint._critSinceMs >= SNAP_HOLD_MS && !this._pendingSnaps.includes(constraint)) {
+          this._pendingSnaps.push(constraint);
+        }
+      } else {
+        constraint._critSinceMs = -1; // stress recovered — reset timer
       }
     }
 
