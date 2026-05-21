@@ -23,16 +23,16 @@ Phase 1 only. Applies to road segments. Wood/support segments are structural-onl
 
 Tune road spring and joint values in `leveldata.js` so joints droop further and more slowly before the constraint snaps.
 
-| Parameter | Current | Proposed | Why |
-|---|---|---|---|
-| Road stiffness | 0.15 | 0.08 | Softer springs — joints move further under vehicle load |
-| Road snapThreshold | 0.30 | 0.50 | More stretch allowed before snap — gives time to see droop |
-| Joint density | 0.05 | 0.10 | Heavier joints sag further under their own weight |
-| Constraint damping | 0.05 | 0.08 | More damped — droops steadily, does not bounce |
+| Parameter | Current | Proposed | Location | Why |
+|---|---|---|---|---|
+| Road stiffness | 0.15 | 0.08 | `leveldata.js` materials.road.stiffness | Softer springs — joints move further under vehicle load |
+| Road snapThreshold | 0.30 | 0.50 | `leveldata.js` materials.road.snapThreshold | More stretch allowed before snap — gives time to see droop |
+| Joint density | 0.05 | 0.10 | `physics.js` `ensureJointNode()` — hard-coded, **not in leveldata** | Heavier joints sag further under their own weight |
+| Constraint damping | 0.05 | 0.08 | `physics.js` `buildBeam()` — hard-coded, **not in leveldata** | More damped — droops steadily, does not bounce |
 
-Wood/support values are unchanged. Values apply to both L1 and DEV_STRESS via the material definition in each level object.
+Wood/support stiffness and snapThreshold are unchanged. Stiffness and snapThreshold for road apply to both L1 and DEV_STRESS via their material definitions. Joint density and constraint damping are global (physics.js), affecting all levels equally.
 
-The cheat panel already exposes stiffness and snapThreshold sliders so in-browser fine-tuning requires no code changes.
+The cheat panel already exposes stiffness and snapThreshold sliders. The `roadSnapThreshold` slider is currently capped at 0.50 — the proposed value hits the ceiling exactly. If further tuning above 0.50 is needed, widen the slider range in `_buildCheatGui()`.
 
 ---
 
@@ -75,20 +75,23 @@ Replace `graphics.lineTo` calls in `redrawBeamBases()` with `graphics.moveTo` + 
 
 Replace the current warm-only colour progression (yellow → orange → red) with a hue-shifted progression that reads as three unmistakably different states.
 
+Kids map colours to traffic lights they already know. The progression must follow that mental model exactly: green = fine, yellow = warning, red = danger.
+
 ### Colour table
 
 | Stage | Threshold | Current colour | New colour | Stroke bonus |
 |---|---|---|---|---|
-| MED | strain ≥ 0.05 | `0xffd24a` dull yellow | `0x00e5ff` bright cyan | +3px |
+| SAFE | strain < 0.05 | base colour | base colour (no overlay) | none |
+| MED | strain ≥ 0.05 | `0xffd24a` dull yellow | `0x44ff44` bright green | +3px |
 | HIGH | strain ≥ 0.20 | `0xff8a1f` orange | `0xffee00` bright yellow | +8px |
-| CRIT | strain ≥ 0.50 | `0xff2e2e` red | `0xff1111` red + white pulse | +14px |
+| CRIT | strain ≥ 0.50 | `0xff2e2e` red | `0xff1111` red, slow glow | +14px |
 
-At CRIT, the overlay alternates between `0xff1111` and `0xffffff` at 8Hz — an urgent rapid flash the player cannot miss.
+At CRIT, the overlay uses a slow sine-wave pulse at **2Hz** (not 8Hz — faster rates are a photosensitivity risk for kids). The existing sine-wave alpha pulse in `redrawStressOverlay` already does this — no new mechanism needed, just keep the existing `PULSE_HZ_CRIT` value at 2.0.
 
 ### Joint glow
 
-Joint glow colours update to match the new progression:
-- MED glow: `0x00e5ff` (cyan)
+Joint glow colours update to match:
+- MED glow: `0x44ff44` (green)
 - HIGH glow: `0xffee00` (yellow)
 - CRIT glow: `0xff1111` (red)
 
@@ -117,7 +120,7 @@ On snap, a bright white circle expands and fades at the midpoint of the snapping
 - Radius: 0 → 30px over 150ms
 - Alpha: 1 → 0 over 150ms
 - Colour: white `0xffffff`
-- Drawn on the existing `snapGraphics` layer
+- **Must use a dedicated Phaser circle game object with a tween** — NOT drawn on `snapGraphics`. The existing `snapGraphics` layer is cleared on every mouse move in `handleHover()`, which would kill the tween mid-animation. Create a `Phaser.GameObjects.Arc` at spawn time, tween its `alpha` and `scaleX/scaleY`, then destroy it on tween complete.
 
 The snap midpoint is already available in the `onSnapCallback` — `(bodyA.position + bodyB.position) / 2`. No changes to `physics.js` required.
 
@@ -127,8 +130,8 @@ A persistent red X drawn at the midpoint of the *first* beam that broke in the c
 - Shape: two diagonal lines forming an ×, 20px across, 3px thick
 - Colour: `0xff2222`
 - Stored as `this._firstBreakPos` in `LevelScene` — set only on the first snap, ignored on subsequent snaps
-- Drawn every frame via `redrawSnapMarkers()` called from `update()` during test mode
-- Cleared in `hardReset()` and the `toggleTest()` RESET branch
+- Drawn every frame via `redrawSnapMarkers()` called from `update()` **after `redrawJoints()`** so it renders on top
+- Cleared in three places: `hardReset()`, the `toggleTest()` RESET branch, and **`clearBridgeData()`** — the auto-return path (win/fail) calls `clearBridgeData()` before `toggleTest()`, so without this third clear a stale X marker would persist into the next round
 
 ---
 
@@ -149,9 +152,9 @@ The 50% rule: 4 road segments = cost 8 = 50% of L1 budget. The remaining 8 point
 
 | File | Changes |
 |---|---|
-| `src/data/leveldata.js` | road stiffness, snapThreshold, joint density, damping values |
-| `src/scenes/LevelScene.js` | VIZ colour constants, bezier curve rendering in redrawBeamBases + redrawBeams, redrawSnapMarkers(), firstBreakPos tracking, SAG_DEPTH_FACTOR constant |
-| `src/systems/physics.js` | No changes required |
+| `src/data/leveldata.js` | road stiffness 0.08, snapThreshold 0.50 |
+| `src/scenes/LevelScene.js` | VIZ colour constants, step-based thickness lookup, bezier curve in `redrawBeamBases()`, `redrawSnapMarkers()`, `_firstBreakPos` tracking, SAG_DEPTH_FACTOR constant, flash circle game object, `PULSE_HZ_CRIT` reduced to 2.0 |
+| `src/systems/physics.js` | `ensureJointNode()` density 0.10, `buildBeam()` damping 0.08 |
 
 ## Architecture Invariants
 
