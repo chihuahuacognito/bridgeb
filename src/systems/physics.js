@@ -18,10 +18,11 @@
 
 const MIN_REST_LEN = 4;
 const SNAP_ABS_PX  = 8;
-// Overhang of 0: no extension past joint endpoints. Extending beams past nodes
-// causes crossing rectangles at angled junctions, which block the vehicle.
-// The 80px chassis bridges any sub-8px node gap without needing overlap.
-const BEAM_OVERHANG = 0;
+// 6px overhang per end (12px junction overlap) so wheel radius-10 circles never
+// fall through the seam between two kinematic road segments at a mid-joint.
+// Chassis mask now excludes beams (~0x0004) so only wheels contact road;
+// without overlap those 10px wheels can slip through a zero-width junction.
+const BEAM_OVERHANG = 6;
 
 // Visual strain saturation point: the stretch ratio at which the visual
 // stress signal reads 1.0. Independent of material.snapThreshold so future
@@ -73,6 +74,8 @@ const physics = {
       }
       if (this._vehicle) {
         toRemove.push(this._vehicle.chassis);
+        if (this._vehicle.wheelA) toRemove.push(this._vehicle.wheelA, this._vehicle.wheelB);
+        if (this._vehicle.axleA)  toRemove.push(this._vehicle.axleA,  this._vehicle.axleB);
       }
       this._scene.matter.world.remove(toRemove);
     }
@@ -107,27 +110,42 @@ const physics = {
     return body;
   },
 
-  // Create static collision bodies for canyon walls. Called once from LevelScene
-  // after physics.attach. Idempotent: clears existing canyon bodies first.
-  buildCanyon(canyonData) {
+  // Create static collision bodies for terrain walls. Called once from LevelScene
+  // after physics.attach. Idempotent: clears existing bodies first.
+  buildTerrain(terrainData) {
     if (!this._scene) return;
-    // If called twice, clear previous walls first.
     if (this._canyonBodies.length > 0) {
       this._scene.matter.world.remove(this._canyonBodies);
       this._canyonBodies.length = 0;
     }
-    const { leftWall, rightWall } = canyonData;
-    for (const wall of [leftWall, rightWall]) {
-      const body = this._scene.matter.add.rectangle(
-        wall.x, wall.y, wall.width, wall.height,
-        {
-          isStatic: true,
-          label: 'canyon-wall',
-          friction: 0.6,
-          collisionFilter: { category: 0x0008, mask: 0xFFFF },
-        }
-      );
+    for (const side of [terrainData.left, terrainData.right]) {
+      const { x, y, width, height } = side.physRect;
+      const body = this._scene.matter.add.rectangle(x, y, width, height, {
+        isStatic: true,
+        label: 'terrain',
+        friction: 0.6,
+        collisionFilter: { category: 0x0008, mask: 0xFFFF },
+      });
       this._canyonBodies.push(body);
+    }
+  },
+
+  // Build static collision bodies for rocks. Must be called after buildTerrain,
+  // once per scene lifecycle. Pushes bodies into _canyonBodies so reset() clears them.
+  buildRocks(rocks) {
+    if (!this._scene) return;
+    for (const rock of rocks) {
+      const { x, y, width, height } = rock.physRect;
+      const body = this._scene.matter.add.rectangle(x, y, width, height, {
+        isStatic: true,
+        label: 'rock',
+        friction: 0.6,
+        collisionFilter: { category: 0x0008, mask: 0xFFFF },
+      });
+      this._canyonBodies.push(body);
+      for (const anchor of (rock.anchors ?? [])) {
+        this.ensureJointNode(anchor.id, anchor.x, anchor.y, true);
+      }
     }
   },
 
@@ -202,6 +220,8 @@ const physics = {
       attachA: null, attachB: null,
       kinematic: !bothStatic,
       type: material.type,
+      // Track current body width so _updateKinematicBeams can resize it as beams stretch.
+      _scaledLength: (!bothStatic && isRoad) ? (length + 2 * BEAM_OVERHANG) : null,
     });
     return constraint;
   },
@@ -218,15 +238,14 @@ const physics = {
   removeBeam(constraint) {
     if (!this._scene) return;
     const idx = this._beamConstraints.findIndex(b => b.constraint === constraint);
-    if (idx >= 0) {
-      const b = this._beamConstraints[idx];
-      const toRemove = [b.constraint];
-      if (b.body) toRemove.push(b.body);
-      if (b.attachA) toRemove.push(b.attachA);
-      if (b.attachB) toRemove.push(b.attachB);
-      this._scene.matter.world.remove(toRemove);
-      this._beamConstraints.splice(idx, 1);
-    }
+    if (idx === -1) return;
+    const entry = this._beamConstraints[idx];
+    const toRemove = [entry.constraint];
+    if (entry.body)    toRemove.push(entry.body);
+    if (entry.attachA) toRemove.push(entry.attachA);
+    if (entry.attachB) toRemove.push(entry.attachB);
+    this._scene.matter.world.remove(toRemove);
+    this._beamConstraints.splice(idx, 1);
   },
 
   // Capture rollback snapshot. Spec §3.15.
@@ -282,12 +301,21 @@ const physics = {
 
   freezeVehicle() {
     if (!this._scene || !this._vehicle) return;
-    this._scene.matter.body.setStatic(this._vehicle.chassis, true);
+    const { chassis, wheelA, wheelB } = this._vehicle;
+    this._scene.matter.body.setStatic(chassis, true);
+    if (wheelA) {
+      this._scene.matter.body.setStatic(wheelA, true);
+      this._scene.matter.body.setStatic(wheelB, true);
+    }
   },
 
   removeVehicle() {
     if (!this._scene || !this._vehicle) return;
-    this._scene.matter.world.remove(this._vehicle.chassis);
+    const { chassis, wheelA, wheelB, axleA, axleB } = this._vehicle;
+    const toRemove = [chassis];
+    if (wheelA) toRemove.push(wheelA, wheelB);
+    if (axleA)  toRemove.push(axleA, axleB);
+    this._scene.matter.world.remove(toRemove);
     this._vehicle = null;
   },
 
@@ -296,17 +324,42 @@ const physics = {
     const { spawnAt } = config;
     const spawnX = spawnAt === 'left' ? 240 : 1040;
     const spawnY = 320;
+    const WHEEL_R   = 10;
+    const WHEEL_X   = 26; // ±px from chassis centre
+    const CHASSIS_H = 12; // half-height of chassis rectangle
 
+    // Chassis does not contact road beams — wheels do.
+    // group -2 prevents chassis↔wheel self-collision.
     const chassis = this._scene.matter.add.rectangle(spawnX, spawnY, 80, 24, {
       label: 'vehicle-chassis',
       density: config.density ?? 0.008,
       restitution: 0,
-      friction: 0.6,
+      friction: 0,
       chamfer: { radius: 6 },
-      collisionFilter: { category: 0x0001, mask: 0xFFFF & ~0x0002 },
+      collisionFilter: { category: 0x0001, mask: 0xFFFF & ~0x0002 & ~0x0004, group: -2 },
     });
 
-    this._vehicle = { chassis, config };
+    // Wheels spawn at chassis-bottom corners so the zero-length axle constraints
+    // start at rest length and produce no initial jolt.
+    const wheelOpts = {
+      label: 'vehicle-wheel',
+      density: 0.003,
+      friction: 0.8,
+      frictionStatic: 0.5,
+      restitution: 0,
+      collisionFilter: { category: 0x0001, mask: 0xFFFF & ~0x0002, group: -2 },
+    };
+    const wheelY  = spawnY + CHASSIS_H;
+    const wheelA  = this._scene.matter.add.circle(spawnX + WHEEL_X, wheelY, WHEEL_R, wheelOpts);
+    const wheelB  = this._scene.matter.add.circle(spawnX - WHEEL_X, wheelY, WHEEL_R, wheelOpts);
+
+    // Zero-length, stiffness-1 constraints act as rigid axles.
+    const axleA = this._scene.matter.add.constraint(chassis, wheelA, 0, 1,
+      { pointA: { x:  WHEEL_X, y: CHASSIS_H }, pointB: { x: 0, y: 0 } });
+    const axleB = this._scene.matter.add.constraint(chassis, wheelB, 0, 1,
+      { pointA: { x: -WHEEL_X, y: CHASSIS_H }, pointB: { x: 0, y: 0 } });
+
+    this._vehicle = { chassis, wheelA, wheelB, axleA, axleB, config };
     return this._vehicle;
   },
 
@@ -507,12 +560,36 @@ const physics = {
       const dx = bPos.x - aPos.x;
       const dy = bPos.y - aPos.y;
       const angle = Math.atan2(dy, dx);
+      const currentDist = Math.hypot(dx, dy);
       const midX = (aPos.x + bPos.x) / 2;
       const midY = (aPos.y + bPos.y) / 2;
       const perpDownX = -Math.sin(angle);
       const perpDownY = Math.cos(angle);
-      const cx = midX + perpDownX * (30 / 2); // thickness always 30 for kinematic beams
+      const cx = midX + perpDownX * (30 / 2);
       const cy = midY + perpDownY * (30 / 2);
+
+      // Keep body width = currentDist + 2*BEAM_OVERHANG so the overlap is
+      // maintained even when a heavy vehicle stretches the beams beyond their
+      // rest length. Without this, the overhang shrinks to a gap and the tank
+      // falls through the seam at every mid-joint.
+      //
+      // Resize by directly moving the left/right vertex X coordinates while
+      // the body is temporarily horizontal (angle=0), then let setPosition +
+      // setAngle re-orient and update bounds. No external Matter.Body.scale
+      // call needed — those require Phaser internals that may not be accessible.
+      if (b._scaledLength !== null) {
+        const targetLength = currentDist + 2 * BEAM_OVERHANG;
+        if (Math.abs(targetLength - b._scaledLength) > 0.5) {
+          this._scene.matter.body.setAngle(b.body, 0); // horizontal so world-X = beam axis
+          const hw  = targetLength / 2;
+          const ocx = b.body.position.x;
+          for (const v of b.body.vertices) {
+            v.x = v.x < ocx ? ocx - hw : ocx + hw;
+          }
+          b._scaledLength = targetLength;
+        }
+      }
+
       this._scene.matter.body.setPosition(b.body, { x: cx, y: cy });
       this._scene.matter.body.setAngle(b.body, angle);
     }

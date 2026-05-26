@@ -6,6 +6,7 @@ import physics from '../systems/physics.js';
 import audio from '../systems/audio.js';
 import juice from '../systems/juice.js';
 import cam from '../systems/camera.js';
+import { findBeamSnap } from '../utils/snapGeometry.js';
 
 // Flip to false (or gate on build flag) to hide the metrics overlay in production.
 const DEBUG_HUD = true;
@@ -80,7 +81,12 @@ export class LevelScene extends Phaser.Scene {
     this.level = ALL_LEVELS[this.levelId];
     this.beams = [];
     this.pendingJointA = null;
-    this.joints = this.level.anchors.map(a => ({ x: a.x, y: a.y, isAnchor: true, bodyId: a.id }));
+    this.joints = [
+      ...this.level.anchors.map(a => ({ x: a.x, y: a.y, isAnchor: true, bodyId: a.id })),
+      ...(this.level.rocks ?? []).flatMap(rock =>
+        (rock.anchors ?? []).map(a => ({ x: a.x, y: a.y, isAnchor: true, bodyId: a.id }))
+      ),
+    ];
     this.SNAP_RADIUS = 20;
     this._firstBreakPos = null;
     this._debris = [];
@@ -89,7 +95,8 @@ export class LevelScene extends Phaser.Scene {
   create() {
     this.drawSky();
     this.drawGrid();
-    this.drawCanyon();
+    this.drawTerrain();
+    this.drawRocks();
     this.drawWater();
 
     this.beamsGraphics   = this.add.graphics(); // back: beam bases
@@ -105,7 +112,8 @@ export class LevelScene extends Phaser.Scene {
     this.input.on('pointermove', (pointer) => this.handleHover(pointer));
 
     physics.attach(this);
-    physics.buildCanyon(this.level.canyon);
+    physics.buildTerrain(this.level.terrain);
+    physics.buildRocks(this.level.rocks ?? []);
 
     // Create anchor bodies and add them to the joints registry by id.
     for (const a of this.level.anchors) {
@@ -253,21 +261,36 @@ export class LevelScene extends Phaser.Scene {
     }
   }
 
-  drawCanyon() {
+  drawTerrain() {
     const g = this.add.graphics();
-    g.fillStyle(0x2c3033, 1); // dark charcoal
-    const { leftWall, rightWall } = this.level.canyon;
-    g.fillRect(leftWall.x - leftWall.width / 2,  leftWall.y - leftWall.height / 2,
-               leftWall.width, leftWall.height);
-    g.fillRect(rightWall.x - rightWall.width / 2, rightWall.y - rightWall.height / 2,
-               rightWall.width, rightWall.height);
+    const { left, right } = this.level.terrain;
+    for (const side of [left, right]) {
+      g.fillStyle(side.color ?? 0x2c3033, 1);
+      g.fillPoints(side.verts, true);
+      g.lineStyle(2, 0x1a1d20, 1);
+      g.strokePoints(side.verts, true);
+    }
+  }
+
+  drawRocks() {
+    const g = this.add.graphics();
+    for (const rock of (this.level.rocks ?? [])) {
+      g.fillStyle(rock.color ?? 0x8b6a2e, 1);
+      g.fillPoints(rock.verts, true);
+      g.lineStyle(2, 0x1a1d20, 1);
+      g.strokePoints(rock.verts, true);
+    }
   }
 
   drawWater() {
     const g = this.add.graphics();
-    g.fillStyle(0x1a1d20, 1); // near-black
-    g.fillRect(0, this.level.canyon.waterY, this.level.worldWidth,
-               this.level.worldHeight - this.level.canyon.waterY);
+    const { waterY } = this.level.terrain;
+    // Main water body — dark navy
+    g.fillStyle(0x0c1f33, 1);
+    g.fillRect(0, waterY, this.level.worldWidth, this.level.worldHeight - waterY);
+    // Surface highlight strip — lighter teal sliver at the waterline
+    g.fillStyle(0x1a4a6e, 0.55);
+    g.fillRect(0, waterY, this.level.worldWidth, 7);
   }
 
   findNearestJoint(p) {
@@ -285,22 +308,43 @@ export class LevelScene extends Phaser.Scene {
   handleClick(pointer) {
     if (this.mode !== 'build') return;
     const raw = { x: pointer.worldX, y: pointer.worldY };
-    const snap = this.findNearestJoint(raw);
-    const p = snap ? { x: snap.x, y: snap.y, bodyId: snap.bodyId } : raw;
+
+    const jointSnap = this.findNearestJoint(raw);
+    let p;
+    let beamSnapResult = null;
+
+    if (jointSnap) {
+      p = { x: jointSnap.x, y: jointSnap.y, bodyId: jointSnap.bodyId };
+    } else {
+      beamSnapResult = findBeamSnap(raw, this.beams, this.SNAP_RADIUS);
+      p = beamSnapResult ? { x: beamSnapResult.point.x, y: beamSnapResult.point.y } : raw;
+    }
 
     if (!this.pendingJointA) {
-      this.pendingJointA = p.bodyId ? p : this.registerNewJoint(p);
+      if (beamSnapResult) {
+        const newJoint = this.splitBeam(beamSnapResult.beamIndex, beamSnapResult.point);
+        this.pendingJointA = newJoint;
+        this.redrawBeams();
+        this.redrawJoints(new Map());
+      } else {
+        this.pendingJointA = p.bodyId ? p : this.registerNewJoint(p);
+      }
     } else {
       if (this._budgetRemaining < this.material.cost) {
         this._flashBudget();
         this.pendingJointA = null;
         return;
       }
-      const endpoint = p.bodyId ? p : this.registerNewJoint(p);
+      let endpoint;
+      if (beamSnapResult) {
+        endpoint = this.splitBeam(beamSnapResult.beamIndex, beamSnapResult.point);
+      } else {
+        endpoint = p.bodyId ? p : this.registerNewJoint(p);
+      }
       const matA = physics._nodes.get(this.pendingJointA.bodyId);
       const matB = physics._nodes.get(endpoint.bodyId);
-      physics.buildBeam(matA, matB, this.material);
-      this.beams.push({ a: this.pendingJointA, b: endpoint, material: this.material });
+      const constraint = physics.buildBeam(matA, matB, this.material);
+      this.beams.push({ a: this.pendingJointA, b: endpoint, material: this.material, constraint });
       this._budgetRemaining -= this.material.cost;
       this._updateBudgetDisplay();
       this.pendingJointA = null;
@@ -314,6 +358,28 @@ export class LevelScene extends Phaser.Scene {
     this.joints.push({ x: p.x, y: p.y, isAnchor: false, bodyId: id });
     physics.ensureJointNode(id, p.x, p.y, /* isAnchor */ false);
     return { x: p.x, y: p.y, bodyId: id };
+  }
+
+  splitBeam(beamIndex, splitPoint) {
+    const beam = this.beams[beamIndex];
+    const mat = beam.material;
+
+    physics.removeBeam(beam.constraint);
+    this.beams.splice(beamIndex, 1);
+
+    const newJoint = this.registerNewJoint(splitPoint);
+
+    const bodyA = physics._nodes.get(beam.a.bodyId);
+    const bodyC = physics._nodes.get(newJoint.bodyId);
+    const bodyB = physics._nodes.get(beam.b.bodyId);
+
+    const c1 = physics.buildBeam(bodyA, bodyC, mat);
+    this.beams.push({ a: beam.a, b: newJoint, material: mat, constraint: c1 });
+
+    const c2 = physics.buildBeam(bodyC, bodyB, mat);
+    this.beams.push({ a: newJoint, b: beam.b, material: mat, constraint: c2 });
+
+    return newJoint;
   }
 
   _selectMaterial(type) {
@@ -453,6 +519,7 @@ export class LevelScene extends Phaser.Scene {
     this.clearBridgeData();
     this.rebuildBridge();
     this.pendingJointA = null;
+    this.snapTarget = null;
     // Clear all graphics layers.
     this.vehicleGraphics?.clear();
     this.stressGraphics.clear();
@@ -470,21 +537,44 @@ export class LevelScene extends Phaser.Scene {
   }
 
   handleHover(pointer) {
-    this.ghostGraphics.clear();
-    this.snapGraphics.clear();
+    if (this.mode !== 'build') return;
     const raw = { x: pointer.worldX, y: pointer.worldY };
-    const snap = this.findNearestJoint(raw);
-    if (snap) {
-      this.snapGraphics.lineStyle(2, 0xffff00, 1);
-      this.snapGraphics.strokeCircle(snap.x, snap.y, 18);
+
+    this.snapGraphics.clear();
+    this.ghostGraphics.clear();
+
+    const jointSnap = this.findNearestJoint(raw);
+    const beamSnap = jointSnap ? null : findBeamSnap(raw, this.beams, this.SNAP_RADIUS);
+
+    if (jointSnap) {
+      this.snapTarget = { x: jointSnap.x, y: jointSnap.y, bodyId: jointSnap.bodyId };
+      this.snapGraphics.lineStyle(3, VIZ.JOINT_COLOR, 0.9);
+      this.snapGraphics.strokeCircle(jointSnap.x, jointSnap.y, VIZ.JOINT_RADIUS + 5);
+    } else if (beamSnap) {
+      const { x, y } = beamSnap.point;
+      this.snapTarget = { x, y };
+      const GREEN = 0x44dd44;
+      this.snapGraphics.fillStyle(GREEN, 0.5);
+      this.snapGraphics.fillCircle(x, y, 8);
+      this.snapGraphics.lineStyle(2, GREEN, 0.9);
+      this.snapGraphics.strokeCircle(x, y, 8);
+      const HALF = 12;
+      this.snapGraphics.beginPath();
+      this.snapGraphics.moveTo(x - HALF, y);
+      this.snapGraphics.lineTo(x + HALF, y);
+      this.snapGraphics.moveTo(x, y - HALF);
+      this.snapGraphics.lineTo(x, y + HALF);
+      this.snapGraphics.strokePath();
+    } else {
+      this.snapTarget = null;
     }
+
     if (this.pendingJointA) {
-      const endpoint = snap || raw;
-      const ghostColor = this.material?.type === 'road' ? 0x555555 : 0xb87820;
-      this.ghostGraphics.lineStyle(4, ghostColor, 0.4);
+      const to = this.snapTarget ?? raw;
+      this.ghostGraphics.lineStyle(2, 0xffffff, 0.4);
       this.ghostGraphics.beginPath();
       this.ghostGraphics.moveTo(this.pendingJointA.x, this.pendingJointA.y);
-      this.ghostGraphics.lineTo(endpoint.x, endpoint.y);
+      this.ghostGraphics.lineTo(to.x, to.y);
       this.ghostGraphics.strokePath();
     }
   }
@@ -733,7 +823,7 @@ export class LevelScene extends Phaser.Scene {
 
   _updateDebris(delta) {
     const GRAV   = 0.0005; // px/ms² — gentler than game gravity so pieces drift visibly
-    const waterY = this.level?.canyon?.waterY ?? 900;
+    const waterY = this.level?.terrain?.waterY ?? 900;
     for (let i = this._debris.length - 1; i >= 0; i--) {
       const d = this._debris[i];
       d.vy    += GRAV * delta;
@@ -814,6 +904,7 @@ export class LevelScene extends Phaser.Scene {
     if (this.mode === 'build') {
       physics.captureSnapshot();
       this.mode = 'test';
+      this.snapTarget = null;
       this.testButtonLabel.setText('RESET');
       physics.setTimeScale(1.0);
       physics.setGravity(this._cheatParams.gravityY);
@@ -853,30 +944,34 @@ export class LevelScene extends Phaser.Scene {
     }
   }
 
-  // Full level reset: wipe the Matter world, rebuild the canyon walls, then
+  // Full level reset: wipe the Matter world, rebuild terrain and rocks, then
   // rebuild every joint and beam from the scene-side data. The player's
   // design (this.joints + this.beams) is preserved across the reset.
   rebuildBridge() {
     physics.reset();
-    physics.buildCanyon(this.level.canyon);
+    physics.buildTerrain(this.level.terrain);
+    physics.buildRocks(this.level.rocks ?? []);
     for (const j of this.joints) {
       physics.ensureJointNode(j.bodyId, j.x, j.y, j.isAnchor);
     }
     for (const beam of this.beams) {
       const matA = physics._nodes.get(beam.a.bodyId);
       const matB = physics._nodes.get(beam.b.bodyId);
-      if (matA && matB) physics.buildBeam(matA, matB, beam.material ?? this.material);
+      if (matA && matB) beam.constraint = physics.buildBeam(matA, matB, beam.material ?? this.material);
     }
   }
 
   // Wipe the player's bridge design. Called before auto-restart after
-  // win/fail so the next round starts on an empty canyon.
+  // win/fail so the next round starts on an empty level.
   clearBridgeData() {
     this.beams = [];
     this.pendingJointA = null;
-    this.joints = this.level.anchors.map(
-      a => ({ x: a.x, y: a.y, isAnchor: true, bodyId: a.id })
-    );
+    this.joints = [
+      ...this.level.anchors.map(a => ({ x: a.x, y: a.y, isAnchor: true, bodyId: a.id })),
+      ...(this.level.rocks ?? []).flatMap(rock =>
+        (rock.anchors ?? []).map(a => ({ x: a.x, y: a.y, isAnchor: true, bodyId: a.id }))
+      ),
+    ];
     this._firstBreakPos = null;
     this._debris = [];
   }
@@ -908,7 +1003,7 @@ export class LevelScene extends Phaser.Scene {
       this.checkFall();
       // Auto-return to build mode after the result has been on screen ~1.5s.
       // Wipe the player's design first so they start each round with a clean
-      // canyon (manual RESET, by contrast, keeps the design intact).
+      // level (manual RESET, by contrast, keeps the design intact).
       if (this.testEndAt && this.time.now >= this.testEndAt) {
         this.clearBridgeData();
         this.toggleTest();
@@ -980,9 +1075,18 @@ export class LevelScene extends Phaser.Scene {
     const c = v.chassis;
     const cx = c.position.x, cy = c.position.y;
     const cos = Math.cos(c.angle), sin = Math.sin(c.angle);
-
-    // Chassis as a rotation-aware filled polygon.
     const hw = 40, hh = 12;
+
+    // Wheels are real physics bodies — draw at their actual positions so they
+    // always appear exactly where they contact the road surface.
+    this.vehicleGraphics.fillStyle(0x222222, 1);
+    if (v.wheelA) {
+      this.vehicleGraphics.fillCircle(v.wheelA.position.x, v.wheelA.position.y, 10);
+      this.vehicleGraphics.fillCircle(v.wheelB.position.x, v.wheelB.position.y, 10);
+    }
+
+    // Chassis drawn on top so it covers the wheel tops, leaving the lower arcs
+    // visible below — the standard Poly Bridge vehicle look.
     const corners = [
       { x: cx - hw * cos + hh * sin, y: cy - hw * sin - hh * cos },
       { x: cx + hw * cos + hh * sin, y: cy + hw * sin - hh * cos },
@@ -993,13 +1097,5 @@ export class LevelScene extends Phaser.Scene {
     this.vehicleGraphics.fillPoints(corners, true);
     this.vehicleGraphics.lineStyle(2, 0x331a00, 1);
     this.vehicleGraphics.strokePoints(corners, true);
-
-    // Visual-only wheels at fixed body-local offsets.
-    this.vehicleGraphics.fillStyle(0x222222, 1);
-    for (const { dx, dy } of [{ dx: 28, dy: 12 }, { dx: -28, dy: 12 }]) {
-      const wx = cx + dx * cos - dy * sin;
-      const wy = cy + dx * sin + dy * cos;
-      this.vehicleGraphics.fillCircle(wx, wy, 12);
-    }
   }
 }
