@@ -43,8 +43,14 @@ export const L1 = {
   ],
   gravity: { y: 1.5, label: 'Normal' },
   materials: {
-    road: { type: 'road', cost: 2, stiffness: 0.08, snapThreshold: 0.025 },
-    wood: { type: 'beam', cost: 1, stiffness: 0.15, snapThreshold: 0.18 },
+    road: {
+      type: 'road', cost: 2, stiffness: 0.08, snapThreshold: 0.025,
+      blocks: { S: { length: 40, cost: 2 }, M: { length: 80, cost: 4 }, L: { length: 160, cost: 8 }, XL: { length: 240, cost: 12 } },
+    },
+    wood: {
+      type: 'beam', cost: 1, stiffness: 0.15, snapThreshold: 0.18,
+      blocks: { S: { length: 40, cost: 1 }, M: { length: 80, cost: 2 }, L: { length: 160, cost: 4 }, XL: { length: 240, cost: 6 } },
+    },
   },
 };
 
@@ -52,7 +58,7 @@ export const DEV_STRESS = {
   id: 'DEV_STRESS',
   title: 'Dev — Stress Test',
   span: 6,
-  budget: 40,
+  budget: 400,
   worldWidth: 1280,
   worldHeight: 720,
   terrain: {
@@ -107,8 +113,14 @@ export const DEV_STRESS = {
   ],
   gravity: { y: 1.5, label: 'Normal' },
   materials: {
-    road: { type: 'road', cost: 2, stiffness: 0.08, snapThreshold: 0.025 },
-    wood: { type: 'beam', cost: 1, stiffness: 0.15, snapThreshold: 0.18 },
+    road: {
+      type: 'road', cost: 2, stiffness: 0.08, snapThreshold: 0.025,
+      blocks: { S: { length: 40, cost: 2 }, M: { length: 80, cost: 4 }, L: { length: 160, cost: 8 }, XL: { length: 240, cost: 12 } },
+    },
+    wood: {
+      type: 'beam', cost: 1, stiffness: 0.15, snapThreshold: 0.18,
+      blocks: { S: { length: 40, cost: 1 }, M: { length: 80, cost: 2 }, L: { length: 160, cost: 4 }, XL: { length: 240, cost: 6 } },
+    },
   },
 };
 

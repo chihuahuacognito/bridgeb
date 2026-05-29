@@ -7,6 +7,8 @@ import audio from '../systems/audio.js';
 import juice from '../systems/juice.js';
 import cam from '../systems/camera.js';
 import { findBeamSnap } from '../utils/snapGeometry.js';
+import { BlockPalette } from '../ui/BlockPalette.js';
+import { GhostBeam } from '../ui/GhostBeam.js';
 
 // Flip to false (or gate on build flag) to hide the metrics overlay in production.
 const DEBUG_HUD = true;
@@ -63,6 +65,15 @@ const VIZ = {
   GRID_COLOR: 0x9aa0a8,
   GRID_ALPHA: 0.18,
   GRID_STEP:  40,
+
+  // Blueprint build-mode background
+  BLUEPRINT_BG:          '#1e2d4a',
+  BLUEPRINT_MINOR:       0xffffff,
+  BLUEPRINT_MINOR_ALPHA: 0.10,
+  BLUEPRINT_MAJOR:       0x7ab8d8,
+  BLUEPRINT_MAJOR_ALPHA: 0.28,
+  BLUEPRINT_MAJOR_STEP:  160,
+  TEST_BG:               '#b2b9c2',
 };
 
 const VEHICLE_PRESETS = [
@@ -90,11 +101,14 @@ export class LevelScene extends Phaser.Scene {
     this.SNAP_RADIUS = 20;
     this._firstBreakPos = null;
     this._debris = [];
+    this._blockState = { freeform: false, material: null, size: null, blockLength: 0 };
   }
 
   create() {
     this.drawSky();
-    this.drawGrid();
+    this._blueprintGrid = this.drawBlueprintGrid();
+    this._testGrid      = this.drawTestGrid();
+    this._setBlueprintMode();            // start in build mode
     this.drawTerrain();
     this.drawRocks();
     this.drawWater();
@@ -166,19 +180,15 @@ export class LevelScene extends Phaser.Scene {
     this._buildCheatGui();
     physics.setVisualFullStrain(this._cheatParams.visualFullStrain);
 
-    // Material selector — ROAD (black) and BEAM (orange).
-    // stopPropagation prevents the click from also firing the scene's pointerdown
-    // handler (which would start a beam placement at the button's position).
-    this._roadBtn   = this.add.rectangle(160, 40, 130, 40, VIZ.ROAD_COLOR).setInteractive().setScrollFactor(0);
-    this._roadLabel = this.add.text(160, 40, 'ROAD  [R]', { fontSize: '16px', color: '#ffffff' }).setOrigin(0.5).setScrollFactor(0);
-    this._beamBtn   = this.add.rectangle(310, 40, 130, 40, 0x444444).setInteractive().setScrollFactor(0);
-    this._beamLabel = this.add.text(310, 40, 'BEAM  [B]', { fontSize: '16px', color: '#ffffff' }).setOrigin(0.5).setScrollFactor(0);
+    // Block palette (replaces old ROAD/BEAM buttons).
+    this._palette = new BlockPalette(this, this.level.materials);
+    this._palette.onChange(ev => this._onPaletteChange(ev));
+    this._ghost = new GhostBeam(this);
 
-    this._roadBtn.on('pointerdown', (_p, _lx, _ly, ev) => { ev.stopPropagation(); this._selectMaterial('road'); });
-    this._beamBtn.on('pointerdown', (_p, _lx, _ly, ev) => { ev.stopPropagation(); this._selectMaterial('beam'); });
-
-    this.input.keyboard.on('keydown-R', () => this._selectMaterial('road'));
-    this.input.keyboard.on('keydown-B', () => this._selectMaterial('beam'));
+    // Keyboard shortcuts drive the palette.
+    this.input.keyboard.on('keydown-R', () => this._palette.selectMaterial('road'));
+    this.input.keyboard.on('keydown-B', () => this._palette.selectMaterial('wood'));
+    this.input.keyboard.on('keydown-F', () => this._palette.selectFreeform());
 
     // Vehicle preset selector — second toolbar row at y=95 (taller for icon + label).
     this._vehicleBtns = {};
@@ -221,9 +231,9 @@ export class LevelScene extends Phaser.Scene {
     // Debug HUD — shows live physics metrics in test mode. Toggle with D.
     if (DEBUG_HUD) {
       this._debugHudVisible = true;
-      this._debugBg = this.add.rectangle(220, 672, 424, 96, 0x000000, 0.72)
+      this._debugBg = this.add.rectangle(220, 510, 424, 96, 0x000000, 0.72)
         .setScrollFactor(0).setDepth(100);
-      this._debugText = this.add.text(12, 628, '', {
+      this._debugText = this.add.text(12, 466, '', {
         fontSize: '13px', color: '#00ff88', fontFamily: 'monospace', lineSpacing: 4,
       }).setScrollFactor(0).setDepth(101);
       this.input.keyboard.on('keydown-D', () => {
@@ -243,15 +253,39 @@ export class LevelScene extends Phaser.Scene {
       juice.detach(this);
       cam.detach(this);
       this._gui?.destroy();
+      this._palette?.destroy();
+      this._ghost?.destroy();
     });
   }
 
   drawSky() {
-    this.cameras.main.setBackgroundColor('#b2b9c2'); // Poly Bridge cool gray
+    this.cameras.main.setBackgroundColor('#b2b9c2');
   }
 
-  drawGrid() {
+  drawBlueprintGrid() {
     const g = this.add.graphics();
+    const { worldWidth: w, worldHeight: h } = this.level;
+    // Minor grid — every 40px
+    g.lineStyle(1, VIZ.BLUEPRINT_MINOR, VIZ.BLUEPRINT_MINOR_ALPHA);
+    for (let x = 0; x <= w; x += VIZ.GRID_STEP) {
+      g.beginPath(); g.moveTo(x, 0); g.lineTo(x, h); g.strokePath();
+    }
+    for (let y = 0; y <= h; y += VIZ.GRID_STEP) {
+      g.beginPath(); g.moveTo(0, y); g.lineTo(w, y); g.strokePath();
+    }
+    // Major grid — every 160px (L-block interval), drawn on top at higher alpha
+    g.lineStyle(1, VIZ.BLUEPRINT_MAJOR, VIZ.BLUEPRINT_MAJOR_ALPHA);
+    for (let x = 0; x <= w; x += VIZ.BLUEPRINT_MAJOR_STEP) {
+      g.beginPath(); g.moveTo(x, 0); g.lineTo(x, h); g.strokePath();
+    }
+    for (let y = 0; y <= h; y += VIZ.BLUEPRINT_MAJOR_STEP) {
+      g.beginPath(); g.moveTo(0, y); g.lineTo(w, y); g.strokePath();
+    }
+    return g;
+  }
+
+  drawTestGrid() {
+    const g = this.add.graphics().setVisible(false);
     g.lineStyle(1, VIZ.GRID_COLOR, VIZ.GRID_ALPHA);
     for (let x = 0; x <= this.level.worldWidth; x += VIZ.GRID_STEP) {
       g.beginPath(); g.moveTo(x, 0); g.lineTo(x, this.level.worldHeight); g.strokePath();
@@ -259,6 +293,19 @@ export class LevelScene extends Phaser.Scene {
     for (let y = 0; y <= this.level.worldHeight; y += VIZ.GRID_STEP) {
       g.beginPath(); g.moveTo(0, y); g.lineTo(this.level.worldWidth, y); g.strokePath();
     }
+    return g;
+  }
+
+  _setBlueprintMode() {
+    this.cameras.main.setBackgroundColor(VIZ.BLUEPRINT_BG);
+    this._blueprintGrid?.setVisible(true);
+    this._testGrid?.setVisible(false);
+  }
+
+  _setTestMode() {
+    this.cameras.main.setBackgroundColor(VIZ.TEST_BG);
+    this._blueprintGrid?.setVisible(false);
+    this._testGrid?.setVisible(true);
   }
 
   drawTerrain() {
@@ -307,8 +354,16 @@ export class LevelScene extends Phaser.Scene {
 
   handleClick(pointer) {
     if (this.mode !== 'build') return;
-    const raw = { x: pointer.worldX, y: pointer.worldY };
+    if (this._palette.isOverPalette(pointer)) return;
+    if (this._blockState.freeform) {
+      this._handleFreeformClick(pointer);
+    } else if (this._blockState.material && this._blockState.size) {
+      this._handleBlockPlace();
+    }
+  }
 
+  _handleFreeformClick(pointer) {
+    const raw = { x: pointer.worldX, y: pointer.worldY };
     const jointSnap = this.findNearestJoint(raw);
     let p;
     let beamSnapResult = null;
@@ -353,6 +408,31 @@ export class LevelScene extends Phaser.Scene {
     }
   }
 
+  _handleBlockPlace() {
+    const placement = this._ghost.getPlacement();
+    if (!placement) { this._flashBudget(); return; }
+
+    const mat = this._blockState.material;
+    const cost = mat.blocks[this._blockState.size].cost;
+    if (this._budgetRemaining < cost) { this._flashBudget(); return; }
+
+    const { anchorJoint, farEnd, farJoint } = placement;
+    const endJoint = farJoint
+      ? { x: farJoint.x, y: farJoint.y, bodyId: farJoint.bodyId }
+      : this.registerNewJoint(farEnd);
+
+    const bodyA = physics._nodes.get(anchorJoint.bodyId);
+    const bodyB = physics._nodes.get(endJoint.bodyId);
+    if (!bodyA || !bodyB) return;
+
+    const constraint = physics.buildBeam(bodyA, bodyB, mat);
+    this.beams.push({ a: anchorJoint, b: endJoint, material: mat, constraint });
+    this._budgetRemaining -= cost;
+    this._updateBudgetDisplay();
+    this.redrawBeams();
+    this.redrawJoints(new Map());
+  }
+
   registerNewJoint(p) {
     const id = 'j' + (this.joints.length + 1);
     this.joints.push({ x: p.x, y: p.y, isAnchor: false, bodyId: id });
@@ -382,14 +462,42 @@ export class LevelScene extends Phaser.Scene {
     return newJoint;
   }
 
+  // Called by palette onChange events — updates _blockState and this.material.
+  _onPaletteChange(ev) {
+    if (ev.type === 'material') {
+      const mat = ev.material ? this.level.materials[ev.material] : null;
+      this._blockState.material = mat;
+      this._blockState.size = null;
+      this._blockState.blockLength = 0;
+      this._blockState.freeform = false;
+      this.material = mat ?? this.material; // keep this.material valid for rebuildBridge
+      this._ghost.hide();
+    } else if (ev.type === 'size') {
+      const mat = this.level.materials[ev.material];
+      const block = mat?.blocks?.[ev.size];
+      this._blockState.material = mat;
+      this._blockState.size = ev.size;
+      this._blockState.blockLength = block?.length ?? 0;
+      this._blockState.freeform = false;
+      this.material = mat;
+      this._ghost.show();
+    } else if (ev.type === 'freeform') {
+      this._blockState.freeform = ev.active;
+      this._blockState.material = null;
+      this._blockState.size = null;
+      this._blockState.blockLength = 0;
+      this._ghost.hide();
+      this.pendingJointA = null;
+    } else if (ev.type === 'reset') {
+      this._blockState = { freeform: false, material: null, size: null, blockLength: 0 };
+      this._ghost.hide();
+      this.pendingJointA = null;
+    }
+  }
+
+  // Keep as thin wrapper for callers in hardReset that need a default state.
   _selectMaterial(type) {
-    if (this.mode !== 'build') return;
-    this.material = type === 'road'
-      ? this.level.materials.road
-      : this.level.materials.wood;
-    const roadActive = type === 'road';
-    this._roadBtn.setFillStyle(roadActive ? VIZ.ROAD_COLOR : 0x444444);
-    this._beamBtn.setFillStyle(roadActive ? 0x444444 : VIZ.BEAM_COLOR);
+    this._palette?.selectMaterial(type === 'road' ? 'road' : 'wood');
   }
 
   _updateBudgetDisplay() {
@@ -514,6 +622,7 @@ export class LevelScene extends Phaser.Scene {
       this.testEndAt = 0;
       this.mode = 'build';
       this.testButtonLabel.setText('TEST');
+      this._setBlueprintMode();
     }
     // Wipe player design and rebuild physics with only anchors.
     this.clearBridgeData();
@@ -529,7 +638,9 @@ export class LevelScene extends Phaser.Scene {
     this._debris = [];
     this._jointStrain = null;
     this._firstBreakPos = null;
-    this._selectMaterial('road'); // reset to default material
+    this._ghost.hide();
+    this._palette.reset();       // clears selection, fires reset onChange
+    this.material = this.level.materials.road;
     this.redrawBeams();
     this.redrawJoints(new Map());
     this._budgetRemaining = this.level.budget;
@@ -538,44 +649,61 @@ export class LevelScene extends Phaser.Scene {
 
   handleHover(pointer) {
     if (this.mode !== 'build') return;
-    const raw = { x: pointer.worldX, y: pointer.worldY };
 
+    if (this._palette.isOverPalette(pointer)) {
+      this._ghost.hide();
+      this.snapGraphics.clear();
+      this.ghostGraphics.clear();
+      return;
+    }
+
+    const raw = { x: pointer.worldX, y: pointer.worldY };
     this.snapGraphics.clear();
     this.ghostGraphics.clear();
 
-    const jointSnap = this.findNearestJoint(raw);
-    const beamSnap = jointSnap ? null : findBeamSnap(raw, this.beams, this.SNAP_RADIUS);
+    if (this._blockState.freeform) {
+      // Freeform: show snap ring + pending wire (original behaviour)
+      const jointSnap = this.findNearestJoint(raw);
+      const beamSnap = jointSnap ? null : findBeamSnap(raw, this.beams, this.SNAP_RADIUS);
 
-    if (jointSnap) {
-      this.snapTarget = { x: jointSnap.x, y: jointSnap.y, bodyId: jointSnap.bodyId };
-      this.snapGraphics.lineStyle(3, VIZ.JOINT_COLOR, 0.9);
-      this.snapGraphics.strokeCircle(jointSnap.x, jointSnap.y, VIZ.JOINT_RADIUS + 5);
-    } else if (beamSnap) {
-      const { x, y } = beamSnap.point;
-      this.snapTarget = { x, y };
-      const GREEN = 0x44dd44;
-      this.snapGraphics.fillStyle(GREEN, 0.5);
-      this.snapGraphics.fillCircle(x, y, 8);
-      this.snapGraphics.lineStyle(2, GREEN, 0.9);
-      this.snapGraphics.strokeCircle(x, y, 8);
-      const HALF = 12;
-      this.snapGraphics.beginPath();
-      this.snapGraphics.moveTo(x - HALF, y);
-      this.snapGraphics.lineTo(x + HALF, y);
-      this.snapGraphics.moveTo(x, y - HALF);
-      this.snapGraphics.lineTo(x, y + HALF);
-      this.snapGraphics.strokePath();
+      if (jointSnap) {
+        this.snapTarget = { x: jointSnap.x, y: jointSnap.y, bodyId: jointSnap.bodyId };
+        this.snapGraphics.lineStyle(3, VIZ.JOINT_COLOR, 0.9);
+        this.snapGraphics.strokeCircle(jointSnap.x, jointSnap.y, VIZ.JOINT_RADIUS + 5);
+      } else if (beamSnap) {
+        const { x, y } = beamSnap.point;
+        this.snapTarget = { x, y };
+        const GREEN = 0x44dd44;
+        this.snapGraphics.fillStyle(GREEN, 0.5);
+        this.snapGraphics.fillCircle(x, y, 8);
+        this.snapGraphics.lineStyle(2, GREEN, 0.9);
+        this.snapGraphics.strokeCircle(x, y, 8);
+        const HALF = 12;
+        this.snapGraphics.beginPath();
+        this.snapGraphics.moveTo(x - HALF, y);
+        this.snapGraphics.lineTo(x + HALF, y);
+        this.snapGraphics.moveTo(x, y - HALF);
+        this.snapGraphics.lineTo(x, y + HALF);
+        this.snapGraphics.strokePath();
+      } else {
+        this.snapTarget = null;
+      }
+
+      if (this.pendingJointA) {
+        const to = this.snapTarget ?? raw;
+        this.ghostGraphics.lineStyle(2, 0xffffff, 0.4);
+        this.ghostGraphics.beginPath();
+        this.ghostGraphics.moveTo(this.pendingJointA.x, this.pendingJointA.y);
+        this.ghostGraphics.lineTo(to.x, to.y);
+        this.ghostGraphics.strokePath();
+      }
+
+    } else if (this._blockState.material && this._blockState.size) {
+      // Block mode: ghost beam follows cursor
+      this._ghost.show();
+      this._ghost.update(raw, this.joints, this._blockState.blockLength, this.SNAP_RADIUS, this._blockState.material);
     } else {
-      this.snapTarget = null;
-    }
-
-    if (this.pendingJointA) {
-      const to = this.snapTarget ?? raw;
-      this.ghostGraphics.lineStyle(2, 0xffffff, 0.4);
-      this.ghostGraphics.beginPath();
-      this.ghostGraphics.moveTo(this.pendingJointA.x, this.pendingJointA.y);
-      this.ghostGraphics.lineTo(to.x, to.y);
-      this.ghostGraphics.strokePath();
+      this._ghost.hide();
     }
   }
 
@@ -918,6 +1046,8 @@ export class LevelScene extends Phaser.Scene {
       physics.spawnVehicle(vehicleConfig);
       cam.follow(() => physics.getVehicleChassisPosition());
       this.testEndAt = 0;
+      this._setTestMode();
+      this._ghost.hide();
     } else {
       juice.reset();
       this.rebuildBridge();
@@ -928,6 +1058,7 @@ export class LevelScene extends Phaser.Scene {
       this.mode = 'build';
       this.testButtonLabel.setText('TEST');
       physics.setRunnerEnabled(false);
+      this._setBlueprintMode();
       this.vehicleGraphics?.clear();
       this.stressGraphics.clear();
       this._jointStrain = null;
