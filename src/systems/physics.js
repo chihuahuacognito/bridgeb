@@ -234,6 +234,13 @@ const physics = {
     return body.isStatic && body.label === 'anchor';
   },
 
+  removeJointNode(jointId) {
+    const body = this._nodes.get(jointId);
+    if (!body) return;
+    this._scene.matter.world.remove(body);
+    this._nodes.delete(jointId);
+  },
+
   // Disconnect a beam at runtime (called by cascade in Task 8)
   removeBeam(constraint) {
     if (!this._scene) return;

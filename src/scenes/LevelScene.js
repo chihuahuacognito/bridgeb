@@ -76,11 +76,26 @@ const VIZ = {
   TEST_BG:               '#b2b9c2',
 };
 
+// Vehicle presets use human-readable 1–10 scales.
+// vehicleParamsFromDesign() converts these to raw physics values at spawn time.
 const VEHICLE_PRESETS = [
-  { key: 'car',   label: 'CAR',   density: 0.003, driveSpeed: 5, color: 0x2277bb },
-  { key: 'truck', label: 'TRUCK', density: 0.008, driveSpeed: 3, color: 0xcc7722 },
-  { key: 'tank',  label: 'TANK',  density: 0.020, driveSpeed: 2, color: 0xaa2222 },
+  { key: 'car',   label: 'CAR',   weight: 3, speed: 7, acceleration: 5, color: 0x2277bb },
+  { key: 'truck', label: 'TRUCK', weight: 5, speed: 4, acceleration: 5, color: 0xcc7722 },
+  { key: 'tank',  label: 'TANK',  weight: 8, speed: 2, acceleration: 5, color: 0xaa2222 },
 ];
+
+// Maps 1–10 design scales to Matter.js physics parameters.
+//   weight 1–10  → density  0.001–0.050  (log — spans two orders of magnitude)
+//   speed  1–10  → driveSpeed  1–8 px/f  (linear)
+//   accel  1–10  → driveForceGain 0.0001–0.005  (log)
+function vehicleParamsFromDesign({ weight, speed, acceleration }) {
+  const t = (v) => (v - 1) / 9;                          // normalise 1–10 → 0–1
+  return {
+    density:        0.001  * Math.pow(50,   t(weight)),
+    driveSpeed:     1      + t(speed) * 7,
+    driveForceGain: 0.0001 * Math.pow(50,   t(acceleration)),
+  };
+}
 
 export class LevelScene extends Phaser.Scene {
   constructor() {
@@ -102,6 +117,8 @@ export class LevelScene extends Phaser.Scene {
     this._firstBreakPos = null;
     this._debris = [];
     this._blockState = { freeform: false, material: null, size: null, blockLength: 0 };
+    this._undoStack  = [];
+    this._freeformPendingNewJoint = null;
   }
 
   create() {
@@ -164,9 +181,9 @@ export class LevelScene extends Phaser.Scene {
     this._vehiclePreset = VEHICLE_PRESETS[0].key;
     const _vp0 = VEHICLE_PRESETS[0];
     this._cheatParams = {
-      carDensity:          _vp0.density,
-      driveSpeed:          _vp0.driveSpeed,
-      driveForceGain:      0.001,
+      weight:              _vp0.weight,
+      speed:               _vp0.speed,
+      acceleration:        _vp0.acceleration,
       roadStiffness:       this.level.materials.road.stiffness,
       roadSnapThreshold:   this.level.materials.road.snapThreshold,
       beamStiffness:       this.level.materials.wood.stiffness,
@@ -214,6 +231,12 @@ export class LevelScene extends Phaser.Scene {
     this.add.rectangle(640, 95, 130, 54, 0x1a2a3a).setScrollFactor(0);
     this.add.text(640, 95, gravLabel, { fontSize: '13px', color: '#88aacc' })
       .setOrigin(0.5).setScrollFactor(0);
+
+    // UNDO — removes the last placed beam (Ctrl+Z).
+    this._undoBtn   = this.add.rectangle(330, 40, 120, 40, 0x444444).setInteractive().setScrollFactor(0);
+    this._undoLabel = this.add.text(330, 40, 'UNDO', { fontSize: '16px', color: '#888888' }).setOrigin(0.5).setScrollFactor(0);
+    this._undoBtn.on('pointerdown', (_p, _lx, _ly, ev) => { ev.stopPropagation(); this._undoLastPlacement(); });
+    this.input.keyboard.on('keydown-Z', (ev) => { if (ev.ctrlKey || ev.metaKey) this._undoLastPlacement(); });
 
     // Hard RESET — clears all beams and joints, returns to a clean build state.
     this._resetBtn   = this.add.rectangle(480, 40, 130, 40, 0x8b1a1a).setInteractive().setScrollFactor(0);
@@ -379,28 +402,43 @@ export class LevelScene extends Phaser.Scene {
       if (beamSnapResult) {
         const newJoint = this.splitBeam(beamSnapResult.beamIndex, beamSnapResult.point);
         this.pendingJointA = newJoint;
+        this._freeformPendingNewJoint = null; // split-beam — not tracked for undo
         this.redrawBeams();
         this.redrawJoints(new Map());
       } else {
-        this.pendingJointA = p.bodyId ? p : this.registerNewJoint(p);
+        const isNew = !p.bodyId;
+        this.pendingJointA = isNew ? this.registerNewJoint(p) : p;
+        this._freeformPendingNewJoint = isNew ? this.pendingJointA : null;
       }
     } else {
-      if (this._budgetRemaining < this.material.cost) {
+      const cost = this.material.cost;
+      if (this._budgetRemaining < cost) {
         this._flashBudget();
         this.pendingJointA = null;
         return;
       }
       let endpoint;
+      let endpointIsNew = false;
       if (beamSnapResult) {
         endpoint = this.splitBeam(beamSnapResult.beamIndex, beamSnapResult.point);
       } else {
-        endpoint = p.bodyId ? p : this.registerNewJoint(p);
+        endpointIsNew = !p.bodyId;
+        endpoint = endpointIsNew ? this.registerNewJoint(p) : p;
       }
       const matA = physics._nodes.get(this.pendingJointA.bodyId);
       const matB = physics._nodes.get(endpoint.bodyId);
       const constraint = physics.buildBeam(matA, matB, this.material);
-      this.beams.push({ a: this.pendingJointA, b: endpoint, material: this.material, constraint });
-      this._budgetRemaining -= this.material.cost;
+      const beam = { a: this.pendingJointA, b: endpoint, material: this.material, constraint };
+      this.beams.push(beam);
+      if (!beamSnapResult) {
+        const newJoints = [];
+        if (this._freeformPendingNewJoint) newJoints.push(this._freeformPendingNewJoint);
+        if (endpointIsNew) newJoints.push(endpoint);
+        this._undoStack.push({ beam, newJoints, cost });
+        this._updateUndoBtn();
+      }
+      this._freeformPendingNewJoint = null;
+      this._budgetRemaining -= cost;
       this._updateBudgetDisplay();
       this.pendingJointA = null;
       this.redrawBeams();
@@ -417,16 +455,21 @@ export class LevelScene extends Phaser.Scene {
     if (this._budgetRemaining < cost) { this._flashBudget(); return; }
 
     const { anchorJoint, farEnd, farJoint } = placement;
+    const jointsBefore = this.joints.length;
     const endJoint = farJoint
       ? { x: farJoint.x, y: farJoint.y, bodyId: farJoint.bodyId }
       : this.registerNewJoint(farEnd);
+    const newJoints = this.joints.slice(jointsBefore);
 
     const bodyA = physics._nodes.get(anchorJoint.bodyId);
     const bodyB = physics._nodes.get(endJoint.bodyId);
     if (!bodyA || !bodyB) return;
 
     const constraint = physics.buildBeam(bodyA, bodyB, mat);
-    this.beams.push({ a: anchorJoint, b: endJoint, material: mat, constraint });
+    const beam = { a: anchorJoint, b: endJoint, material: mat, constraint };
+    this.beams.push(beam);
+    this._undoStack.push({ beam, newJoints, cost });
+    this._updateUndoBtn();
     this._budgetRemaining -= cost;
     this._updateBudgetDisplay();
     this.redrawBeams();
@@ -495,6 +538,49 @@ export class LevelScene extends Phaser.Scene {
     }
   }
 
+  _undoLastPlacement() {
+    if (this.mode !== 'build') return;
+
+    // Mid-freeform (first click placed, waiting for second): cancel it.
+    if (this.pendingJointA) {
+      if (this._freeformPendingNewJoint) {
+        physics.removeJointNode(this._freeformPendingNewJoint.bodyId);
+        const ji = this.joints.indexOf(this._freeformPendingNewJoint);
+        if (ji !== -1) this.joints.splice(ji, 1);
+        this._freeformPendingNewJoint = null;
+      }
+      this.pendingJointA = null;
+      this.redrawBeams();
+      this.redrawJoints(new Map());
+      return;
+    }
+
+    if (!this._undoStack.length) return;
+    const { beam, newJoints, cost } = this._undoStack.pop();
+
+    physics.removeBeam(beam.constraint);
+    const bi = this.beams.indexOf(beam);
+    if (bi !== -1) this.beams.splice(bi, 1);
+
+    for (const j of newJoints) {
+      physics.removeJointNode(j.bodyId);
+      const ji = this.joints.indexOf(j);
+      if (ji !== -1) this.joints.splice(ji, 1);
+    }
+
+    this._budgetRemaining += cost;
+    this._updateBudgetDisplay();
+    this._updateUndoBtn();
+    this.redrawBeams();
+    this.redrawJoints(new Map());
+  }
+
+  _updateUndoBtn() {
+    const hasHistory = this._undoStack.length > 0 || !!this.pendingJointA;
+    this._undoBtn?.setFillStyle(hasHistory ? 0x1a4a6e : 0x444444);
+    this._undoLabel?.setColor(hasHistory ? '#ffffff' : '#888888');
+  }
+
   // Keep as thin wrapper for callers in hardReset that need a default state.
   _selectMaterial(type) {
     this._palette?.selectMaterial(type === 'road' ? 'road' : 'wood');
@@ -542,11 +628,13 @@ export class LevelScene extends Phaser.Scene {
     const preset = VEHICLE_PRESETS.find(p => p.key === key);
     if (!preset) return;
     this._vehiclePreset = key;
-    this._cheatParams.carDensity  = preset.density;
-    this._cheatParams.driveSpeed  = preset.driveSpeed;
+    this._cheatParams.weight       = preset.weight;
+    this._cheatParams.speed        = preset.speed;
+    this._cheatParams.acceleration = preset.acceleration;
     // Sync GUI sliders so the dev panel reflects the preset values.
-    this._guiCarDensityCtrl?.updateDisplay();
-    this._guiDriveSpeedCtrl?.updateDisplay();
+    this._guiWeightCtrl?.updateDisplay();
+    this._guiSpeedCtrl?.updateDisplay();
+    this._guiAccelCtrl?.updateDisplay();
     // Highlight the active button, dim the rest.
     for (const vp of VEHICLE_PRESETS) {
       this._vehicleBtns[vp.key]?.setFillStyle(vp.key === key ? vp.color : 0x444444);
@@ -638,6 +726,9 @@ export class LevelScene extends Phaser.Scene {
     this._debris = [];
     this._jointStrain = null;
     this._firstBreakPos = null;
+    this._undoStack = [];
+    this._freeformPendingNewJoint = null;
+    this._updateUndoBtn();
     this._ghost.hide();
     this._palette.reset();       // clears selection, fires reset onChange
     this.material = this.level.materials.road;
@@ -988,9 +1079,9 @@ export class LevelScene extends Phaser.Scene {
     this._gui = gui;
 
     const veh = gui.addFolder('Vehicle  (takes effect at next TEST)');
-    this._guiCarDensityCtrl = veh.add(p, 'carDensity', 0.001, 0.05, 0.001).name('Car Density');
-    this._guiDriveSpeedCtrl = veh.add(p, 'driveSpeed', 1, 8, 0.5).name('Drive Speed (target px/f)');
-    veh.add(p, 'driveForceGain', 0.0001, 0.005, 0.0001).name('Drive Force Gain');
+    this._guiWeightCtrl = veh.add(p, 'weight',       1, 10, 1).name('Weight');
+    this._guiSpeedCtrl  = veh.add(p, 'speed',        1, 10, 1).name('Speed');
+    this._guiAccelCtrl  = veh.add(p, 'acceleration', 1, 10, 1).name('Acceleration');
 
     const road = gui.addFolder('Material (Road)');
     road.add(p, 'roadStiffness', 0.05, 1.0, 0.01).name('Stiffness').onChange(v => {
@@ -1039,13 +1130,18 @@ export class LevelScene extends Phaser.Scene {
       physics.setRunnerEnabled(true);   // start simulating
       const vehicleConfig = {
         ...this.level.vehicles[0], // spec §2 rule 3: always an array
-        density:        this._cheatParams.carDensity,
-        driveSpeed:     this._cheatParams.driveSpeed,
-        driveForceGain: this._cheatParams.driveForceGain,
+        ...vehicleParamsFromDesign({
+          weight:       this._cheatParams.weight,
+          speed:        this._cheatParams.speed,
+          acceleration: this._cheatParams.acceleration,
+        }),
       };
       physics.spawnVehicle(vehicleConfig);
       cam.follow(() => physics.getVehicleChassisPosition());
       this.testEndAt = 0;
+      this._undoStack = [];
+      this._freeformPendingNewJoint = null;
+      this._updateUndoBtn();
       this._setTestMode();
       this._ghost.hide();
     } else {
