@@ -260,7 +260,22 @@ export class LevelScene extends Phaser.Scene {
   }
 
   drawSky() {
-    this.cameras.main.setBackgroundColor('#b2b9c2');
+    const { worldWidth: w, worldHeight: h } = this.level;
+    const g = this.add.graphics().setDepth(-100);
+    const topR = 0x5D, topG = 0xBF, topB = 0xF0;   // --sky-top
+    const botR = 0xBD, botG = 0xE7, botB = 0xFB;   // --sky-bottom
+    const STEPS = 60;
+    for (let i = 0; i < STEPS; i++) {
+      const t = i / (STEPS - 1);
+      const r = Math.round(topR * (1 - t) + botR * t);
+      const gC = Math.round(topG * (1 - t) + botG * t);
+      const b = Math.round(topB * (1 - t) + botB * t);
+      g.fillStyle((r << 16) | (gC << 8) | b, 1);
+      g.fillRect(0, Math.floor((i * h) / STEPS), w, Math.ceil(h / STEPS) + 1);
+    }
+    this._skyGfx = g;
+    // Camera bg = sky-top so the area outside world bounds blends in.
+    this.cameras.main.setBackgroundColor('#5DBFF0');
   }
 
   drawBlueprintGrid() {
