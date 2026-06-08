@@ -1,3 +1,4 @@
+import './ui-html/styles/index.css';
 import Phaser from 'phaser';
 import { BootScene } from './scenes/BootScene.js';
 import { LevelScene } from './scenes/LevelScene.js';
