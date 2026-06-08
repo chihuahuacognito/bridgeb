@@ -1,0 +1,45 @@
+:root {
+  /* Brand / accent */
+  --blue:        #2D9CDB;
+  --blue-dark:   #1B7AB8;
+  --green:       #5AB942;
+  --green-dark:  #42962E;
+  --grass:       #86C440;
+  --gold:        #F5B423;
+  --gold-dark:   #E09A10;
+  --orange:      #F7941E;
+  --red:         #EB4D3D;
+  --red-dark:    #C53A2D;
+  --purple:      #8E5BD9;
+
+  /* Neutrals */
+  --panel:       #FFFFFF;
+  --panel-tint:  #F2F5F8;
+  --border:      #E1E8EE;
+  --text:        #37474F;
+  --text-soft:   #7A8C99;
+  --text-invert: #FFFFFF;
+
+  /* Sky (world backdrop) */
+  --sky-top:     #5DBFF0;
+  --sky-bottom:  #BDE7FB;
+
+  /* Radii */
+  --r-sm:   10px;
+  --r-md:   14px;
+  --r-lg:   18px;
+  --r-pill: 999px;
+
+  /* Shadows */
+  --shadow-card:  0 4px 12px rgba(40,60,80,0.12);
+  --shadow-float: 0 6px 18px rgba(40,60,80,0.16);
+
+  /* Spacing (8px rhythm) */
+  --space-1:  8px;
+  --space-2: 16px;
+  --space-3: 24px;
+  --space-4: 32px;
+  --space-5: 48px;
+  --space-6: 64px;
+  --gap:      8px;
+}
