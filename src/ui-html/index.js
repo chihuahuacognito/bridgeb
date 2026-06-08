@@ -1,0 +1,25 @@
+import { bus } from './bus.js';
+import { mountTopBar } from './components/TopBar.js';
+import { mountSidebar } from './components/Sidebar.js';
+import { mountHud }     from './components/Hud.js';
+import { mountToolbar } from './components/Toolbar.js';
+
+export function mountUi(opts) {
+  const root = document.getElementById('ui-root');
+  root.classList.add('mode-build');
+
+  mountTopBar(document.getElementById('ui-topbar'));
+  mountSidebar(document.getElementById('ui-sidebar'), {
+    presetOptions: opts.presetOptions,
+    initialPreset: opts.initialPreset,
+  });
+  mountHud(document.getElementById('ui-hud'));
+  mountToolbar(document.getElementById('ui-toolbar'));
+
+  bus.on('mode:changed', (mode) => {
+    root.classList.remove('mode-build', 'mode-test');
+    root.classList.add(`mode-${mode}`);
+  });
+
+  if (opts.initialVehicle) bus.emit('vehicle:active', opts.initialVehicle);
+}

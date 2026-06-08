@@ -2,6 +2,13 @@ import './ui-html/styles/index.css';
 import Phaser from 'phaser';
 import { BootScene } from './scenes/BootScene.js';
 import { LevelScene } from './scenes/LevelScene.js';
+import { mountUi } from './ui-html/index.js';
+
+mountUi({
+  presetOptions: [{ key: 'normal', label: 'NORMAL — G' }],
+  initialPreset: 'normal',
+  initialVehicle: 'car',
+});
 
 const config = {
   type: Phaser.AUTO,
@@ -9,15 +16,16 @@ const config = {
   width: 1280,
   height: 720,
   backgroundColor: '#87ceeb',
+  scale: { mode: Phaser.Scale.FIT, autoCenter: Phaser.Scale.CENTER_BOTH },
   physics: {
     default: 'matter',
     matter: {
-      gravity: { y: 1.5 },            // spec §3.4
-      enableSleeping: false,           // spec §3.4
-      positionIterations: 8,           // spec §3.4 (defensive headroom)
+      gravity: { y: 1.5 },
+      enableSleeping: false,
+      positionIterations: 8,
       velocityIterations: 6,
       constraintIterations: 4,
-      debug: false,                   // flip to true for collision debug
+      debug: false,
     },
   },
   scene: [BootScene, LevelScene],
