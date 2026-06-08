@@ -9,6 +9,7 @@ import cam from '../systems/camera.js';
 import { findBeamSnap } from '../utils/snapGeometry.js';
 import { GhostBeam } from '../ui/GhostBeam.js';
 import { bus } from '../ui-html/bus.js';
+import { assets } from '../systems/assets.js';
 
 const SAG_DEPTH_FACTOR = 0.10;
 
@@ -325,13 +326,22 @@ export class LevelScene extends Phaser.Scene {
   }
 
   drawTerrain() {
-    const g = this.add.graphics();
     const { left, right } = this.level.terrain;
-    for (const side of [left, right]) {
-      g.fillStyle(side.color ?? 0x2c3033, 1);
-      g.fillPoints(side.verts, true);
-      g.lineStyle(2, 0x1a1d20, 1);
-      g.strokePoints(side.verts, true);
+    for (const [side, key] of [[left, 'cliff-left'], [right, 'cliff-right']]) {
+      if (this.textures.exists(key) && assets.has(key)) {
+        const xs = side.verts.map(v => v.x);
+        const ys = side.verts.map(v => v.y);
+        const x0 = Math.min(...xs), y0 = Math.min(...ys);
+        const x1 = Math.max(...xs), y1 = Math.max(...ys);
+        this.add.image(x0, y0, key).setOrigin(0, 0)
+          .setDisplaySize(x1 - x0, y1 - y0).setDepth(-40);
+      } else {
+        const g = this.add.graphics();
+        g.fillStyle(side.color ?? 0x2c3033, 1);
+        g.fillPoints(side.verts, true);
+        g.lineStyle(2, 0x1a1d20, 1);
+        g.strokePoints(side.verts, true);
+      }
     }
   }
 
@@ -1236,22 +1246,34 @@ export class LevelScene extends Phaser.Scene {
   redrawVehicle() {
     this.vehicleGraphics.clear();
     const v = physics._vehicle;
-    if (!v) return;
+    if (!v) {
+      this._vehicleSprite?.setVisible(false);
+      return;
+    }
     const c = v.chassis;
     const cx = c.position.x, cy = c.position.y;
-    const cos = Math.cos(c.angle), sin = Math.sin(c.angle);
-    const hw = 40, hh = 12;
+    const key = this._vehiclePreset;
 
-    // Wheels are real physics bodies — draw at their actual positions so they
-    // always appear exactly where they contact the road surface.
+    // Wheels stay as physics-positioned circles regardless of chassis art path.
     this.vehicleGraphics.fillStyle(0x222222, 1);
     if (v.wheelA) {
       this.vehicleGraphics.fillCircle(v.wheelA.position.x, v.wheelA.position.y, 10);
       this.vehicleGraphics.fillCircle(v.wheelB.position.x, v.wheelB.position.y, 10);
     }
 
-    // Chassis drawn on top so it covers the wheel tops, leaving the lower arcs
-    // visible below — the standard Poly Bridge vehicle look.
+    if (this.textures.exists(key) && assets.has(key)) {
+      if (!this._vehicleSprite) {
+        this._vehicleSprite = this.add.image(cx, cy, key).setOrigin(0.5, 0.5).setDepth(2);
+      }
+      this._vehicleSprite.setTexture(key).setVisible(true)
+        .setPosition(cx, cy).setRotation(c.angle);
+      return;
+    }
+    this._vehicleSprite?.setVisible(false);
+
+    // Procedural fallback — Poly Bridge style rectangle chassis.
+    const cos = Math.cos(c.angle), sin = Math.sin(c.angle);
+    const hw = 40, hh = 12;
     const corners = [
       { x: cx - hw * cos + hh * sin, y: cy - hw * sin - hh * cos },
       { x: cx + hw * cos + hh * sin, y: cy + hw * sin - hh * cos },
