@@ -101,6 +101,30 @@
 #ui-toolbar .divider { width: 1px; height: 48px; background: var(--border); margin: 0 6px; flex: 0 0 auto; }
 #ui-toolbar .play-small { margin-left: auto; }
 
+/* Size sub-row — floats above the toolbar when ROAD or BEAM is active. */
+#ui-size-row {
+  left: 12px; bottom: 110px;
+  display: none;
+  gap: 6px;
+  padding: 8px;
+  background: var(--panel);
+  border-radius: var(--r-md);
+  box-shadow: var(--shadow-float);
+}
+#ui-size-row[data-visible="true"] { display: flex; }
+.size-tile {
+  width: 64px; height: 56px;
+  flex-direction: column; gap: 2px;
+  padding: 6px;
+}
+.size-tile .size-key  { font-size: 17px; font-weight: 700; line-height: 1; }
+.size-tile .size-cost { font-size: 11px; color: var(--gold-dark); font-weight: 700; }
+.size-tile[data-active="true"] {
+  background: var(--blue); color: var(--text-invert);
+  box-shadow: 0 5px 0 var(--blue-dark), var(--shadow-float);
+}
+.size-tile[data-active="true"] .size-cost { color: #fff8d8; }
+
 /* Logo. */
 .logo { width: 200px; height: 64px; padding: 0 14px; display: flex; align-items: center; gap: 10px; background: var(--panel); border-radius: var(--r-md); box-shadow: 0 3px 0 var(--border), var(--shadow-card); }
 .logo .logo-icon { width: 42px; height: 42px; border-radius: 10px; background: var(--orange); display: grid; place-items: center; color: #fff; }

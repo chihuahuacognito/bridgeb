@@ -23,7 +23,7 @@ body {
 #game canvas { display: block; width: 100%; height: 100%; }
 
 #ui-root { pointer-events: none; }
-#ui-topbar, #ui-sidebar, #ui-hud, #ui-toolbar, #ui-modals {
+#ui-topbar, #ui-sidebar, #ui-hud, #ui-toolbar, #ui-size-row, #ui-modals {
   position: absolute;
   pointer-events: auto;
 }

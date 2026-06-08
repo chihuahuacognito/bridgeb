@@ -225,6 +225,7 @@ export class LevelScene extends Phaser.Scene {
       modeToggle:    () => this.toggleTest(),
       vehicleSelect: (k) => this._selectVehicle(k),
       toolSelect:    (k) => this._onToolSelect(k),
+      sizeSelect:    (k) => this._onSizeSelect(k),
       gravityPreset: (k) => this._applyGravityPreset(k),
     };
     bus.on('undo',           this._busHandlers.undo);
@@ -232,6 +233,7 @@ export class LevelScene extends Phaser.Scene {
     bus.on('mode:toggle',    this._busHandlers.modeToggle);
     bus.on('vehicle:select', this._busHandlers.vehicleSelect);
     bus.on('tool:select',    this._busHandlers.toolSelect);
+    bus.on('size:select',    this._busHandlers.sizeSelect);
     bus.on('gravity:preset', this._busHandlers.gravityPreset);
 
     // Initial sync — listeners are now wired in mountUi() (runs before Phaser).
@@ -252,6 +254,7 @@ export class LevelScene extends Phaser.Scene {
       bus.off('mode:toggle',    this._busHandlers.modeToggle);
       bus.off('vehicle:select', this._busHandlers.vehicleSelect);
       bus.off('tool:select',    this._busHandlers.toolSelect);
+      bus.off('size:select',    this._busHandlers.sizeSelect);
       bus.off('gravity:preset', this._busHandlers.gravityPreset);
     });
   }
@@ -1047,14 +1050,17 @@ export class LevelScene extends Phaser.Scene {
     if (toolKey === 'road' || toolKey === 'beam') {
       const matKey = toolKey === 'road' ? 'road' : 'wood';
       const mat = this.level.materials[matKey];
-      // Default to medium size; HTML toolbar omits the S/M/L/XL row in this revamp.
-      const block = mat.blocks.M ?? Object.values(mat.blocks)[0];
+      const currentSize = this._blockState.size ?? 'M';
+      const block = mat.blocks[currentSize] ?? mat.blocks.M ?? Object.values(mat.blocks)[0];
+      const sizeKey = block === mat.blocks[currentSize] ? currentSize : 'M';
       this._blockState.material = mat;
-      this._blockState.size = block ? 'M' : null;
+      this._blockState.size = block ? sizeKey : null;
       this._blockState.blockLength = block?.length ?? 0;
       this._blockState.freeform = false;
       this.material = mat;
       this._ghost.show();
+      const sizes = Object.entries(mat.blocks).map(([key, b]) => ({ key, length: b.length, cost: b.cost }));
+      bus.emit('sizes:show', { sizes, current: this._blockState.size });
     } else if (toolKey === 'free') {
       this._blockState.freeform = !this._blockState.freeform;
       this._blockState.material = null;
@@ -1062,12 +1068,25 @@ export class LevelScene extends Phaser.Scene {
       this._blockState.blockLength = 0;
       this._ghost.hide();
       this.pendingJointA = null;
+      bus.emit('sizes:hide');
     } else if (toolKey === 'zoom-in') {
       this.cameras.main.setZoom(Math.min(this.cameras.main.zoom * 1.1, 2.5));
     } else if (toolKey === 'zoom-out') {
       this.cameras.main.setZoom(Math.max(this.cameras.main.zoom / 1.1, 0.5));
     }
     // grid / snap / nodes / cable / hydraulic / spring / remove are no-ops in this scope.
+  }
+
+  _onSizeSelect(sizeKey) {
+    const mat = this._blockState.material;
+    if (!mat) return;
+    const block = mat.blocks[sizeKey];
+    if (!block) return;
+    this._blockState.size = sizeKey;
+    this._blockState.blockLength = block.length;
+    this._ghost.show();
+    const sizes = Object.entries(mat.blocks).map(([key, b]) => ({ key, length: b.length, cost: b.cost }));
+    bus.emit('sizes:show', { sizes, current: sizeKey });
   }
 
   _applyGravityPreset(_key) {

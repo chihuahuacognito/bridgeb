@@ -11,6 +11,7 @@ function setupDom() {
         <aside  id="ui-sidebar"></aside>
         <div    id="ui-hud"></div>
         <nav    id="ui-toolbar"></nav>
+        <div    id="ui-size-row"></div>
         <div    id="ui-modals"></div>
       </div>
     </div>`;

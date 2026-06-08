@@ -3,6 +3,7 @@ import { mountTopBar } from './components/TopBar.js';
 import { mountSidebar } from './components/Sidebar.js';
 import { mountHud }     from './components/Hud.js';
 import { mountToolbar } from './components/Toolbar.js';
+import { mountSizeRow } from './components/SizeRow.js';
 
 export function mountUi(opts) {
   const root = document.getElementById('ui-root');
@@ -15,6 +16,7 @@ export function mountUi(opts) {
   });
   mountHud(document.getElementById('ui-hud'));
   mountToolbar(document.getElementById('ui-toolbar'));
+  mountSizeRow(document.getElementById('ui-size-row'));
 
   bus.on('mode:changed', (mode) => {
     root.classList.remove('mode-build', 'mode-test');
