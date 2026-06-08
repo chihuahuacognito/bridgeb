@@ -9,6 +9,7 @@ import cam from '../systems/camera.js';
 import { findBeamSnap } from '../utils/snapGeometry.js';
 import { BlockPalette } from '../ui/BlockPalette.js';
 import { GhostBeam } from '../ui/GhostBeam.js';
+import { bus } from '../ui-html/bus.js';
 
 // Flip to false (or gate on build flag) to hide the metrics overlay in production.
 const DEBUG_HUD = true;
@@ -270,6 +271,29 @@ export class LevelScene extends Phaser.Scene {
     physics.setRunnerEnabled(false);
     this.redrawJoints(new Map());
 
+    // ── HTML UI bus wiring ──────────────────────────────────────────────────
+    this._toolState = { material: 'road', size: null, freeform: false };
+    this._busHandlers = {
+      undo:          () => this._undoLastPlacement(),
+      clear:         () => this.hardReset(),
+      modeToggle:    () => this.toggleTest(),
+      vehicleSelect: (k) => this._selectVehicle(k),
+      toolSelect:    (k) => this._onToolSelect(k),
+      gravityPreset: (k) => this._applyGravityPreset(k),
+    };
+    bus.on('undo',           this._busHandlers.undo);
+    bus.on('clear',          this._busHandlers.clear);
+    bus.on('mode:toggle',    this._busHandlers.modeToggle);
+    bus.on('vehicle:select', this._busHandlers.vehicleSelect);
+    bus.on('tool:select',    this._busHandlers.toolSelect);
+    bus.on('gravity:preset', this._busHandlers.gravityPreset);
+
+    // Initial sync — listeners are now wired in mountUi() (runs before Phaser).
+    bus.emit('budget:update', this._budgetRemaining);
+    bus.emit('vehicle:active', this._vehiclePreset);
+    bus.emit('mode:changed', 'build');
+    bus.emit('tool:select', 'road');
+
     this.events.on('shutdown', () => {
       physics.detach(this);
       audio.detach(this);
@@ -278,6 +302,12 @@ export class LevelScene extends Phaser.Scene {
       this._gui?.destroy();
       this._palette?.destroy();
       this._ghost?.destroy();
+      bus.off('undo',           this._busHandlers.undo);
+      bus.off('clear',          this._busHandlers.clear);
+      bus.off('mode:toggle',    this._busHandlers.modeToggle);
+      bus.off('vehicle:select', this._busHandlers.vehicleSelect);
+      bus.off('tool:select',    this._busHandlers.toolSelect);
+      bus.off('gravity:preset', this._busHandlers.gravityPreset);
     });
   }
 
@@ -588,6 +618,7 @@ export class LevelScene extends Phaser.Scene {
 
   _updateBudgetDisplay() {
     const n = this._budgetRemaining;
+    bus.emit('budget:update', n);
     this._budgetLabel.setText(`LEFT: ${n}`);
     if (n === 0) {
       this._budgetLabel.setColor('#ff4444');
@@ -599,18 +630,20 @@ export class LevelScene extends Phaser.Scene {
   }
 
   _updateDebugHud() {
-    if (!this._debugText) return;
     const info = physics.getDebugInfo();
-    if (!info) { this._debugText.setText('no vehicle'); return; }
-    const { vx, vy, speed, angleDeg, angVelDeg, driveForce, accel, slopeDeg, closestDist } = info;
-    const accelStr = (accel >= 0 ? '+' : '') + accel.toFixed(3);
-    const slopeStr = slopeDeg != null ? slopeDeg.toFixed(1) + '°' : '--';
-    this._debugText.setText([
-      `SPD ${speed.toFixed(2)}  VX ${vx.toFixed(2)}  VY ${vy.toFixed(2)}`,
-      `ACCEL ${accelStr}/tick   DRIVE ${driveForce.toExponential(2)}`,
-      `CHASSIS ${angleDeg.toFixed(1)}°  ANGVEL ${angVelDeg.toFixed(2)}°/tick`,
-      `SLOPE ${slopeStr}  BEAM-DIST ${closestDist.toFixed(0)}px    [D] toggle`,
-    ].join('\n'));
+    if (!info) {
+      bus.emit('hud:update', { spd: '—', accel: '—', drive: '—', chassis: '—', angvel: '—', slope: '—' });
+      return;
+    }
+    const { speed, accel, driveForce, angleDeg, angVelDeg, slopeDeg } = info;
+    bus.emit('hud:update', {
+      spd:     speed.toFixed(2),
+      accel:   (accel >= 0 ? '+' : '') + accel.toFixed(2),
+      drive:   driveForce.toExponential(1),
+      chassis: angleDeg.toFixed(1) + '°',
+      angvel:  angVelDeg.toFixed(2),
+      slope:   slopeDeg != null ? slopeDeg.toFixed(0) + '°' : '—',
+    });
   }
 
   _flashBudget() {
@@ -628,6 +661,7 @@ export class LevelScene extends Phaser.Scene {
     const preset = VEHICLE_PRESETS.find(p => p.key === key);
     if (!preset) return;
     this._vehiclePreset = key;
+    bus.emit('vehicle:active', key);
     this._cheatParams.weight       = preset.weight;
     this._cheatParams.speed        = preset.speed;
     this._cheatParams.acceleration = preset.acceleration;
@@ -711,6 +745,7 @@ export class LevelScene extends Phaser.Scene {
       this.mode = 'build';
       this.testButtonLabel.setText('TEST');
       this._setBlueprintMode();
+      bus.emit('mode:changed', 'build');
     }
     // Wipe player design and rebuild physics with only anchors.
     this.clearBridgeData();
@@ -1144,6 +1179,7 @@ export class LevelScene extends Phaser.Scene {
       this._updateUndoBtn();
       this._setTestMode();
       this._ghost.hide();
+      bus.emit('mode:changed', 'test');
     } else {
       juice.reset();
       this.rebuildBridge();
@@ -1168,7 +1204,32 @@ export class LevelScene extends Phaser.Scene {
       this.testEndAt = 0;
       this._budgetRemaining = this.level.budget;
       this._updateBudgetDisplay();
+      bus.emit('mode:changed', 'build');
     }
+  }
+
+  _onToolSelect(toolKey) {
+    if (toolKey === 'road' || toolKey === 'beam') {
+      const matKey = toolKey === 'road' ? 'road' : 'wood';
+      this._toolState.material = matKey;
+      this._toolState.freeform = false;
+      this.material = this.level.materials[matKey];
+      this._palette?.selectMaterial(matKey);
+    } else if (toolKey === 'free') {
+      this._toolState.freeform = !this._toolState.freeform;
+      this._toolState.material = null;
+      this._palette?.selectFreeform();
+    } else if (toolKey === 'zoom-in') {
+      this.cameras.main.setZoom(Math.min(this.cameras.main.zoom * 1.1, 2.5));
+    } else if (toolKey === 'zoom-out') {
+      this.cameras.main.setZoom(Math.max(this.cameras.main.zoom / 1.1, 0.5));
+    }
+    // grid / snap / nodes / cable / hydraulic / spring / remove are no-ops in this scope.
+  }
+
+  _applyGravityPreset(_key) {
+    // Hook for future preset list — only 'normal' exists today.
+    physics.setGravity?.(this._cheatParams.gravityY);
   }
 
   // Full level reset: wipe the Matter world, rebuild terrain and rocks, then
@@ -1225,7 +1286,7 @@ export class LevelScene extends Phaser.Scene {
       this.redrawJoints(this._jointStrain);
       this.redrawSnapMarkers();
       this.redrawVehicle();
-      if (DEBUG_HUD && this._debugHudVisible) this._updateDebugHud();
+      this._updateDebugHud();
       this.checkWin();
       this.checkFall();
       // Auto-return to build mode after the result has been on screen ~1.5s.
