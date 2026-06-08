@@ -7,13 +7,18 @@ import audio from '../systems/audio.js';
 import juice from '../systems/juice.js';
 import cam from '../systems/camera.js';
 import { findBeamSnap } from '../utils/snapGeometry.js';
-import { BlockPalette } from '../ui/BlockPalette.js';
 import { GhostBeam } from '../ui/GhostBeam.js';
 import { bus } from '../ui-html/bus.js';
 
-// Flip to false (or gate on build flag) to hide the metrics overlay in production.
-const DEBUG_HUD = true;
 const SAG_DEPTH_FACTOR = 0.10;
+
+// True if the pointer is over an HTML chrome region (top bar, sidebar, toolbar, HUD).
+// Phaser-side click/hover handlers must skip these events so the DOM owns them.
+function isOverHtmlChrome(pointer) {
+  if (typeof document === 'undefined') return false;
+  const el = document.elementFromPoint(pointer.x, pointer.y);
+  return !!el?.closest('#ui-topbar, #ui-sidebar, #ui-toolbar, #ui-hud, #ui-modals');
+}
 
 const VIZ = {
   // Stress visual thresholds (independent of snap tuning)
@@ -198,81 +203,22 @@ export class LevelScene extends Phaser.Scene {
     this._buildCheatGui();
     physics.setVisualFullStrain(this._cheatParams.visualFullStrain);
 
-    // Block palette (replaces old ROAD/BEAM buttons).
-    this._palette = new BlockPalette(this, this.level.materials);
-    this._palette.onChange(ev => this._onPaletteChange(ev));
     this._ghost = new GhostBeam(this);
 
-    // Keyboard shortcuts drive the palette.
-    this.input.keyboard.on('keydown-R', () => this._palette.selectMaterial('road'));
-    this.input.keyboard.on('keydown-B', () => this._palette.selectMaterial('wood'));
-    this.input.keyboard.on('keydown-F', () => this._palette.selectFreeform());
-
-    // Vehicle preset selector — second toolbar row at y=95 (taller for icon + label).
-    this._vehicleBtns = {};
-    const vpX = [160, 310, 460];
-    VEHICLE_PRESETS.forEach((vp, i) => {
-      const active = vp.key === this._vehiclePreset;
-      const btn = this.add.rectangle(vpX[i], 95, 130, 54, active ? vp.color : 0x444444)
-        .setInteractive().setScrollFactor(0);
-      btn.on('pointerdown', (_p, _lx, _ly, ev) => { ev.stopPropagation(); this._selectVehicle(vp.key); });
-      this._vehicleBtns[vp.key] = btn;
-    });
-    this._drawVehicleIcons(); // silhouettes above buttons
-    VEHICLE_PRESETS.forEach((vp, i) => {  // labels above icons
-      this.add.text(vpX[i], 114, vp.label, { fontSize: '11px', color: '#ffffff' })
-        .setOrigin(0.5).setScrollFactor(0);
-    });
+    // Keyboard shortcuts route through the bus so the HTML toolbar stays in sync.
+    this.input.keyboard.on('keydown-R', () => bus.emit('tool:select', 'road'));
+    this.input.keyboard.on('keydown-B', () => bus.emit('tool:select', 'beam'));
+    this.input.keyboard.on('keydown-F', () => bus.emit('tool:select', 'free'));
+    this.input.keyboard.on('keydown-Z', (ev) => { if (ev.ctrlKey || ev.metaKey) this._undoLastPlacement(); });
     this.input.keyboard.on('keydown-ONE',   () => this._selectVehicle('car'));
     this.input.keyboard.on('keydown-TWO',   () => this._selectVehicle('truck'));
     this.input.keyboard.on('keydown-THREE', () => this._selectVehicle('tank'));
-
-    // Gravity label — level-baked, shown as a read-only tag next to the vehicle row.
-    const gravLabel = (this.level.gravity?.label ?? 'Normal').toUpperCase() + '-G';
-    this.add.rectangle(640, 95, 130, 54, 0x1a2a3a).setScrollFactor(0);
-    this.add.text(640, 95, gravLabel, { fontSize: '13px', color: '#88aacc' })
-      .setOrigin(0.5).setScrollFactor(0);
-
-    // UNDO — removes the last placed beam (Ctrl+Z).
-    this._undoBtn   = this.add.rectangle(330, 40, 120, 40, 0x444444).setInteractive().setScrollFactor(0);
-    this._undoLabel = this.add.text(330, 40, 'UNDO', { fontSize: '16px', color: '#888888' }).setOrigin(0.5).setScrollFactor(0);
-    this._undoBtn.on('pointerdown', (_p, _lx, _ly, ev) => { ev.stopPropagation(); this._undoLastPlacement(); });
-    this.input.keyboard.on('keydown-Z', (ev) => { if (ev.ctrlKey || ev.metaKey) this._undoLastPlacement(); });
-
-    // Hard RESET — clears all beams and joints, returns to a clean build state.
-    this._resetBtn   = this.add.rectangle(480, 40, 130, 40, 0x8b1a1a).setInteractive().setScrollFactor(0);
-    this._resetLabel = this.add.text(480, 40, 'CLEAR', { fontSize: '16px', color: '#ffffff' }).setOrigin(0.5).setScrollFactor(0);
-    this._resetBtn.on('pointerdown', (_p, _lx, _ly, ev) => { ev.stopPropagation(); this.hardReset(); });
-
-    // TEST / RESET SIM toggle
-    this.testButton = this.add.rectangle(640, 40, 140, 40, 0x2e7d32).setInteractive().setScrollFactor(0);
-    this.testButtonLabel = this.add.text(640, 40, 'TEST', { fontSize: '18px', color: '#fff' }).setOrigin(0.5).setScrollFactor(0);
-    this.testButton.on('pointerdown', (_p, _lx, _ly, ev) => { ev.stopPropagation(); this.toggleTest(); });
-    this._budgetBg    = this.add.rectangle(800, 40, 130, 40, 0x1a3a2a).setScrollFactor(0);
-    this._budgetLabel = this.add.text(800, 40, `LEFT: ${this.level.budget}`, { fontSize: '16px', color: '#ffffff' })
-      .setOrigin(0.5).setScrollFactor(0);
-
-    // Debug HUD — shows live physics metrics in test mode. Toggle with D.
-    if (DEBUG_HUD) {
-      this._debugHudVisible = true;
-      this._debugBg = this.add.rectangle(220, 510, 424, 96, 0x000000, 0.72)
-        .setScrollFactor(0).setDepth(100);
-      this._debugText = this.add.text(12, 466, '', {
-        fontSize: '13px', color: '#00ff88', fontFamily: 'monospace', lineSpacing: 4,
-      }).setScrollFactor(0).setDepth(101);
-      this.input.keyboard.on('keydown-D', () => {
-        this._debugHudVisible = !this._debugHudVisible;
-        this._debugBg.setVisible(this._debugHudVisible);
-        this._debugText.setVisible(this._debugHudVisible);
-      });
-    }
 
     // Start paused: pause Matter until the player hits TEST.
     physics.setRunnerEnabled(false);
     this.redrawJoints(new Map());
 
     // ── HTML UI bus wiring ──────────────────────────────────────────────────
-    this._toolState = { material: 'road', size: null, freeform: false };
     this._busHandlers = {
       undo:          () => this._undoLastPlacement(),
       clear:         () => this.hardReset(),
@@ -300,7 +246,6 @@ export class LevelScene extends Phaser.Scene {
       juice.detach(this);
       cam.detach(this);
       this._gui?.destroy();
-      this._palette?.destroy();
       this._ghost?.destroy();
       bus.off('undo',           this._busHandlers.undo);
       bus.off('clear',          this._busHandlers.clear);
@@ -407,7 +352,7 @@ export class LevelScene extends Phaser.Scene {
 
   handleClick(pointer) {
     if (this.mode !== 'build') return;
-    if (this._palette.isOverPalette(pointer)) return;
+    if (isOverHtmlChrome(pointer)) return;
     if (this._blockState.freeform) {
       this._handleFreeformClick(pointer);
     } else if (this._blockState.material && this._blockState.size) {
@@ -535,38 +480,6 @@ export class LevelScene extends Phaser.Scene {
     return newJoint;
   }
 
-  // Called by palette onChange events — updates _blockState and this.material.
-  _onPaletteChange(ev) {
-    if (ev.type === 'material') {
-      const mat = ev.material ? this.level.materials[ev.material] : null;
-      this._blockState.material = mat;
-      this._blockState.size = null;
-      this._blockState.blockLength = 0;
-      this._blockState.freeform = false;
-      this.material = mat ?? this.material; // keep this.material valid for rebuildBridge
-      this._ghost.hide();
-    } else if (ev.type === 'size') {
-      const mat = this.level.materials[ev.material];
-      const block = mat?.blocks?.[ev.size];
-      this._blockState.material = mat;
-      this._blockState.size = ev.size;
-      this._blockState.blockLength = block?.length ?? 0;
-      this._blockState.freeform = false;
-      this.material = mat;
-      this._ghost.show();
-    } else if (ev.type === 'freeform') {
-      this._blockState.freeform = ev.active;
-      this._blockState.material = null;
-      this._blockState.size = null;
-      this._blockState.blockLength = 0;
-      this._ghost.hide();
-      this.pendingJointA = null;
-    } else if (ev.type === 'reset') {
-      this._blockState = { freeform: false, material: null, size: null, blockLength: 0 };
-      this._ghost.hide();
-      this.pendingJointA = null;
-    }
-  }
 
   _undoLastPlacement() {
     if (this.mode !== 'build') return;
@@ -606,27 +519,16 @@ export class LevelScene extends Phaser.Scene {
   }
 
   _updateUndoBtn() {
-    const hasHistory = this._undoStack.length > 0 || !!this.pendingJointA;
-    this._undoBtn?.setFillStyle(hasHistory ? 0x1a4a6e : 0x444444);
-    this._undoLabel?.setColor(hasHistory ? '#ffffff' : '#888888');
+    // HTML chrome manages its own visual state; this hook stays for the bus seam.
   }
 
   // Keep as thin wrapper for callers in hardReset that need a default state.
   _selectMaterial(type) {
-    this._palette?.selectMaterial(type === 'road' ? 'road' : 'wood');
+    bus.emit('tool:select', type === 'road' ? 'road' : 'beam');
   }
 
   _updateBudgetDisplay() {
-    const n = this._budgetRemaining;
-    bus.emit('budget:update', n);
-    this._budgetLabel.setText(`LEFT: ${n}`);
-    if (n === 0) {
-      this._budgetLabel.setColor('#ff4444');
-      this._budgetBg.setFillStyle(0x3a1a1a);
-    } else {
-      this._budgetLabel.setColor('#ffffff');
-      this._budgetBg.setFillStyle(0x1a3a2a);
-    }
+    bus.emit('budget:update', this._budgetRemaining);
   }
 
   _updateDebugHud() {
@@ -647,14 +549,7 @@ export class LevelScene extends Phaser.Scene {
   }
 
   _flashBudget() {
-    this.tweens.killTweensOf(this._budgetLabel);
-    this.tweens.add({
-      targets: this._budgetLabel,
-      x: '+=4',
-      yoyo: true,
-      repeat: 3,
-      duration: 40,
-    });
+    // HTML budget chip handles its own emphasis; intentionally empty.
   }
 
   _selectVehicle(key) {
@@ -669,64 +564,6 @@ export class LevelScene extends Phaser.Scene {
     this._guiWeightCtrl?.updateDisplay();
     this._guiSpeedCtrl?.updateDisplay();
     this._guiAccelCtrl?.updateDisplay();
-    // Highlight the active button, dim the rest.
-    for (const vp of VEHICLE_PRESETS) {
-      this._vehicleBtns[vp.key]?.setFillStyle(vp.key === key ? vp.color : 0x444444);
-    }
-  }
-
-  _drawVehicleIcons() {
-    const gfx = this.add.graphics().setScrollFactor(0);
-    const vpX = [160, 310, 460];
-    const iy = 89; // icon center y within the 130×54 button at y=95
-    this._drawCarIcon(gfx, vpX[0], iy);
-    this._drawTruckIcon(gfx, vpX[1], iy);
-    this._drawTankIcon(gfx, vpX[2], iy);
-  }
-
-  _drawCarIcon(gfx, cx, cy) {
-    // Sedan: lower body + sloped roof + two wheels
-    gfx.fillStyle(0xf08c1a, 1);
-    gfx.fillRect(cx - 33, cy - 6, 66, 13); // body
-    gfx.fillRect(cx - 18, cy - 17, 32, 12); // roof
-    gfx.fillStyle(0x222222, 1);
-    gfx.fillCircle(cx + 21, cy + 8, 8); // front wheel
-    gfx.fillCircle(cx - 21, cy + 8, 8); // rear wheel
-    gfx.fillStyle(0x888888, 1);
-    gfx.fillCircle(cx + 21, cy + 8, 3); // hub
-    gfx.fillCircle(cx - 21, cy + 8, 3);
-  }
-
-  _drawTruckIcon(gfx, cx, cy) {
-    // Delivery truck: cargo box (left/rear) + short cab (right/front) + dual rear wheels
-    gfx.fillStyle(0xcc7722, 1);
-    gfx.fillRect(cx - 38, cy - 17, 44, 25); // cargo box
-    gfx.fillRect(cx + 6, cy - 9, 24, 17);   // cab
-    gfx.fillStyle(0x88bbdd, 1);
-    gfx.fillRect(cx + 20, cy - 8, 7, 7);    // windshield
-    gfx.fillStyle(0x222222, 1);
-    gfx.fillCircle(cx + 18, cy + 9, 7);     // front wheel
-    gfx.fillCircle(cx - 28, cy + 9, 7);     // rear outer
-    gfx.fillCircle(cx - 18, cy + 9, 6);     // rear inner (dual)
-    gfx.fillStyle(0x888888, 1);
-    gfx.fillCircle(cx + 18, cy + 9, 3);
-    gfx.fillCircle(cx - 28, cy + 9, 3);
-    gfx.fillCircle(cx - 18, cy + 9, 2);
-  }
-
-  _drawTankIcon(gfx, cx, cy) {
-    // Military tank: tread + olive hull + turret + barrel
-    gfx.fillStyle(0x222222, 1);
-    gfx.fillRect(cx - 40, cy - 1, 80, 11); // tread band
-    gfx.fillStyle(0x556b2f, 1);            // olive drab
-    gfx.fillRect(cx - 36, cy - 9, 72, 18); // hull
-    gfx.fillRect(cx - 10, cy - 21, 28, 14); // turret
-    gfx.fillStyle(0x3d4f22, 1);
-    gfx.fillRect(cx + 18, cy - 17, 22, 5); // barrel
-    gfx.fillStyle(0x333333, 1);
-    for (let i = -3; i <= 3; i++) {        // tread segments
-      gfx.fillRect(cx + i * 11 - 1, cy - 1, 2, 11);
-    }
   }
 
   // Full hard reset: wipes every beam and joint, exits test mode if running,
@@ -743,7 +580,6 @@ export class LevelScene extends Phaser.Scene {
       this.failOverlay?.destroy(); this.failOverlay = null;
       this.testEndAt = 0;
       this.mode = 'build';
-      this.testButtonLabel.setText('TEST');
       this._setBlueprintMode();
       bus.emit('mode:changed', 'build');
     }
@@ -765,7 +601,8 @@ export class LevelScene extends Phaser.Scene {
     this._freeformPendingNewJoint = null;
     this._updateUndoBtn();
     this._ghost.hide();
-    this._palette.reset();       // clears selection, fires reset onChange
+    this._blockState = { freeform: false, material: null, size: null, blockLength: 0 };
+    this._ghost?.hide();
     this.material = this.level.materials.road;
     this.redrawBeams();
     this.redrawJoints(new Map());
@@ -776,7 +613,7 @@ export class LevelScene extends Phaser.Scene {
   handleHover(pointer) {
     if (this.mode !== 'build') return;
 
-    if (this._palette.isOverPalette(pointer)) {
+    if (isOverHtmlChrome(pointer)) {
       this._ghost.hide();
       this.snapGraphics.clear();
       this.ghostGraphics.clear();
@@ -1159,7 +996,6 @@ export class LevelScene extends Phaser.Scene {
       physics.captureSnapshot();
       this.mode = 'test';
       this.snapTarget = null;
-      this.testButtonLabel.setText('RESET');
       physics.setTimeScale(1.0);
       physics.setGravity(this._cheatParams.gravityY);
       physics.setRunnerEnabled(true);   // start simulating
@@ -1188,7 +1024,6 @@ export class LevelScene extends Phaser.Scene {
       this.cameras.main.scrollX = 0;
       this.cameras.main.scrollY = 0;
       this.mode = 'build';
-      this.testButtonLabel.setText('TEST');
       physics.setRunnerEnabled(false);
       this._setBlueprintMode();
       this.vehicleGraphics?.clear();
@@ -1211,14 +1046,22 @@ export class LevelScene extends Phaser.Scene {
   _onToolSelect(toolKey) {
     if (toolKey === 'road' || toolKey === 'beam') {
       const matKey = toolKey === 'road' ? 'road' : 'wood';
-      this._toolState.material = matKey;
-      this._toolState.freeform = false;
-      this.material = this.level.materials[matKey];
-      this._palette?.selectMaterial(matKey);
+      const mat = this.level.materials[matKey];
+      // Default to medium size; HTML toolbar omits the S/M/L/XL row in this revamp.
+      const block = mat.blocks.M ?? Object.values(mat.blocks)[0];
+      this._blockState.material = mat;
+      this._blockState.size = block ? 'M' : null;
+      this._blockState.blockLength = block?.length ?? 0;
+      this._blockState.freeform = false;
+      this.material = mat;
+      this._ghost.show();
     } else if (toolKey === 'free') {
-      this._toolState.freeform = !this._toolState.freeform;
-      this._toolState.material = null;
-      this._palette?.selectFreeform();
+      this._blockState.freeform = !this._blockState.freeform;
+      this._blockState.material = null;
+      this._blockState.size = null;
+      this._blockState.blockLength = 0;
+      this._ghost.hide();
+      this.pendingJointA = null;
     } else if (toolKey === 'zoom-in') {
       this.cameras.main.setZoom(Math.min(this.cameras.main.zoom * 1.1, 2.5));
     } else if (toolKey === 'zoom-out') {
