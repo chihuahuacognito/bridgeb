@@ -6,7 +6,7 @@ import physics from '../systems/physics.js';
 import audio from '../systems/audio.js';
 import juice from '../systems/juice.js';
 import cam from '../systems/camera.js';
-import { findBeamSnap } from '../utils/snapGeometry.js';
+import { findBeamSnap, nearestPointOnSegment } from '../utils/snapGeometry.js';
 import { GhostBeam } from '../ui/GhostBeam.js';
 import { bus } from '../ui-html/bus.js';
 import { assets } from '../systems/assets.js';
@@ -144,6 +144,7 @@ export class LevelScene extends Phaser.Scene {
     this.jointsGraphics  = this.add.graphics(); // front: anchor circles + joint pins + glow
     this.vehicleGraphics = this.add.graphics(); // vehicle chassis + visual wheels
     this._vehicleSprite  = null;
+    this._hoverTarget    = null;
     this.ghostGraphics   = this.add.graphics();
     this.snapGraphics    = this.add.graphics();
     this._debrisGfx      = this.add.graphics().setDepth(5);
@@ -668,10 +669,45 @@ export class LevelScene extends Phaser.Scene {
     this._updateBudgetDisplay();
   }
 
+  _findHoverTarget(worldX, worldY) {
+    let best = null;
+    let bestDist = this.SNAP_RADIUS;
+
+    for (let i = 0; i < this.beams.length; i++) {
+      const b = this.beams[i];
+      const pt = nearestPointOnSegment({ x: worldX, y: worldY }, b.a, b.b);
+      const dist = Math.hypot(pt.x - worldX, pt.y - worldY);
+      if (dist < bestDist) {
+        bestDist = dist;
+        best = { type: 'beam', index: i };
+      }
+    }
+
+    if (!best) {
+      for (let i = 0; i < this.joints.length; i++) {
+        const j = this.joints[i];
+        if (j.isAnchor) continue;
+        const isFree = !this.beams.some(b => b.a.bodyId === j.bodyId || b.b.bodyId === j.bodyId);
+        if (!isFree) continue;
+        const dist = Math.hypot(j.x - worldX, j.y - worldY);
+        if (dist < bestDist) {
+          bestDist = dist;
+          best = { type: 'joint', index: i };
+        }
+      }
+    }
+
+    return best;
+  }
+
   handleHover(pointer) {
-    if (this.mode !== 'build') return;
+    if (this.mode !== 'build') {
+      this._hoverTarget = null;
+      return;
+    }
 
     if (isOverHtmlChrome(pointer)) {
+      this._hoverTarget = null;
       this._ghost.hide();
       this.snapGraphics.clear();
       this.ghostGraphics.clear();
@@ -726,6 +762,8 @@ export class LevelScene extends Phaser.Scene {
     } else {
       this._ghost.hide();
     }
+
+    this._hoverTarget = this._findHoverTarget(pointer.worldX, pointer.worldY);
   }
 
   // Build-mode base draw: road = thick black, beam = thinner orange.
@@ -740,6 +778,16 @@ export class LevelScene extends Phaser.Scene {
       this.beamsGraphics.moveTo(beam.a.x, beam.a.y);
       this.beamsGraphics.lineTo(beam.b.x, beam.b.y);
       this.beamsGraphics.strokePath();
+    }
+    if (this._hoverTarget?.type === 'beam') {
+      const hb = this.beams[this._hoverTarget.index];
+      if (hb) {
+        this.beamsGraphics.lineStyle(4, 0xff2222, 1);
+        this.beamsGraphics.beginPath();
+        this.beamsGraphics.moveTo(hb.a.x, hb.a.y);
+        this.beamsGraphics.lineTo(hb.b.x, hb.b.y);
+        this.beamsGraphics.strokePath();
+      }
     }
   }
 
@@ -918,6 +966,13 @@ export class LevelScene extends Phaser.Scene {
       this.jointsGraphics.strokeCircle(x, y, VIZ.JOINT_RADIUS + 1);
       this.jointsGraphics.fillStyle(VIZ.JOINT_COLOR, 1);
       this.jointsGraphics.fillCircle(x, y, VIZ.JOINT_RADIUS);
+    }
+    if (this._hoverTarget?.type === 'joint') {
+      const hj = this.joints[this._hoverTarget.index];
+      if (hj) {
+        this.jointsGraphics.lineStyle(3, 0xff2222, 1);
+        this.jointsGraphics.strokeCircle(hj.x, hj.y, VIZ.JOINT_RADIUS + 4);
+      }
     }
   }
 
