@@ -150,7 +150,14 @@ export class LevelScene extends Phaser.Scene {
     this._debrisGfx      = this.add.graphics().setDepth(5);
     this.snapTarget = null;
 
-    this.input.on('pointerdown', (pointer) => this.handleClick(pointer));
+    this.sys.game.canvas.addEventListener('contextmenu', (e) => e.preventDefault());
+    this.input.on('pointerdown', (pointer) => {
+      if (pointer.rightButtonDown()) {
+        this._handleRightClickDelete(pointer);
+      } else {
+        this.handleClick(pointer);
+      }
+    });
     this.input.on('pointermove', (pointer) => this.handleHover(pointer));
 
     physics.attach(this);
@@ -1128,6 +1135,7 @@ export class LevelScene extends Phaser.Scene {
       this._updateUndoBtn();
       this._setTestMode();
       this._ghost.hide();
+      this._hoverTarget = null;
       bus.emit('mode:changed', 'test');
     } else {
       juice.reset();
@@ -1269,6 +1277,38 @@ export class LevelScene extends Phaser.Scene {
         this.toggleTest();
       }
     }
+  }
+
+  _handleRightClickDelete(pointer) {
+    if (this.mode !== 'build') return;
+    const target = this._findHoverTarget(pointer.worldX, pointer.worldY);
+    if (!target) return;
+    if (target.type === 'beam') {
+      this._deleteBeam(target.index);
+    } else if (target.type === 'joint') {
+      this._deleteJoint(target.index);
+    }
+    this._hoverTarget = null;
+  }
+
+  _deleteBeam(index) {
+    const beam = this.beams[index];
+    if (!beam) return;
+    physics.removeBeam(beam.constraint);
+    this.beams.splice(index, 1);
+    this._hoverTarget = null;
+    this.redrawBeams();
+    this.redrawJoints(new Map());
+  }
+
+  _deleteJoint(index) {
+    const joint = this.joints[index];
+    if (!joint || joint.isAnchor) return;
+    physics.removeJointNode(joint.bodyId);
+    this.joints.splice(index, 1);
+    this._hoverTarget = null;
+    this.redrawBeams();
+    this.redrawJoints(new Map());
   }
 
   // Chassis below the world bottom → treat as fail and stop the camera so
