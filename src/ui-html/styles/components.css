@@ -139,3 +139,9 @@
 .icon--gray   { color: var(--text-soft); }
 .icon--purple { color: var(--purple); }
 .icon--white  { color: var(--text-invert); }
+
+.btn--saved {
+  background: #22c55e !important;
+  color: #fff !important;
+  transition: background 0.1s;
+}

@@ -29,12 +29,36 @@ export function mountTopBar(root) {
 
   root.appendChild(BudgetChip());
 
-  root.appendChild(IconButton({ icon: I.save(),     label: 'SAVE',     disabled: true }));
-  root.appendChild(IconButton({ icon: I.load(),     label: 'LOAD',     disabled: true }));
+  const saveBtn = IconButton({
+    icon: I.save(), label: 'SAVE',
+    onClick: () => bus.emit('layout:save'),
+  });
+  root.appendChild(saveBtn);
+
+  const loadBtn = IconButton({
+    icon: I.load(), label: 'LOAD', disabled: true,
+    onClick: () => bus.emit('layout:load'),
+  });
+  root.appendChild(loadBtn);
+
   root.appendChild(IconButton({ icon: I.settings(), label: 'SETTINGS', disabled: true }));
   root.appendChild(IconButton({ icon: I.help(),     label: 'HELP',     disabled: true }));
 
   bus.on('mode:changed', (mode) => {
     cta.setLabel(mode === 'test' ? 'RESET SIM' : 'TEST');
+  });
+
+  bus.on('layout:saved', () => {
+    saveBtn.classList.add('btn--saved');
+    setTimeout(() => saveBtn.classList.remove('btn--saved'), 800);
+    loadBtn.removeAttribute('aria-disabled');
+  });
+
+  bus.on('layout:load-available', (available) => {
+    if (available) {
+      loadBtn.removeAttribute('aria-disabled');
+    } else {
+      loadBtn.setAttribute('aria-disabled', 'true');
+    }
   });
 }
