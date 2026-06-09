@@ -10,6 +10,7 @@ import { findBeamSnap } from '../utils/snapGeometry.js';
 import { GhostBeam } from '../ui/GhostBeam.js';
 import { bus } from '../ui-html/bus.js';
 import { assets } from '../systems/assets.js';
+import { saveLayout, loadLayout, hasSave } from '../systems/saveload.js';
 
 const SAG_DEPTH_FACTOR = 0.10;
 
@@ -130,6 +131,7 @@ export class LevelScene extends Phaser.Scene {
 
   create() {
     this.drawSky();
+    this.drawClouds();
     this._blueprintGrid = this.drawBlueprintGrid();
     this._testGrid      = this.drawTestGrid();
     this._setBlueprintMode();            // start in build mode
@@ -141,6 +143,7 @@ export class LevelScene extends Phaser.Scene {
     this.stressGraphics  = this.add.graphics(); // mid: stress overlay (test mode only)
     this.jointsGraphics  = this.add.graphics(); // front: anchor circles + joint pins + glow
     this.vehicleGraphics = this.add.graphics(); // vehicle chassis + visual wheels
+    this._vehicleSprite  = null;
     this.ghostGraphics   = this.add.graphics();
     this.snapGraphics    = this.add.graphics();
     this._debrisGfx      = this.add.graphics().setDepth(5);
@@ -228,6 +231,8 @@ export class LevelScene extends Phaser.Scene {
       toolSelect:    (k) => this._onToolSelect(k),
       sizeSelect:    (k) => this._onSizeSelect(k),
       gravityPreset: (k) => this._applyGravityPreset(k),
+      layoutSave:    () => this._handleSave(),
+      layoutLoad:    () => this._handleLoad(),
     };
     bus.on('undo',           this._busHandlers.undo);
     bus.on('clear',          this._busHandlers.clear);
@@ -236,12 +241,15 @@ export class LevelScene extends Phaser.Scene {
     bus.on('tool:select',    this._busHandlers.toolSelect);
     bus.on('size:select',    this._busHandlers.sizeSelect);
     bus.on('gravity:preset', this._busHandlers.gravityPreset);
+    bus.on('layout:save',    this._busHandlers.layoutSave);
+    bus.on('layout:load',    this._busHandlers.layoutLoad);
 
     // Initial sync — listeners are now wired in mountUi() (runs before Phaser).
     bus.emit('budget:update', this._budgetRemaining);
     bus.emit('vehicle:active', this._vehiclePreset);
     bus.emit('mode:changed', 'build');
     bus.emit('tool:select', 'road');
+    bus.emit('layout:load-available', hasSave(this.levelId));
 
     this.events.on('shutdown', () => {
       physics.detach(this);
@@ -257,6 +265,8 @@ export class LevelScene extends Phaser.Scene {
       bus.off('tool:select',    this._busHandlers.toolSelect);
       bus.off('size:select',    this._busHandlers.sizeSelect);
       bus.off('gravity:preset', this._busHandlers.gravityPreset);
+      bus.off('layout:save',    this._busHandlers.layoutSave);
+      bus.off('layout:load',    this._busHandlers.layoutLoad);
     });
   }
 
@@ -277,6 +287,26 @@ export class LevelScene extends Phaser.Scene {
     this._skyGfx = g;
     // Camera bg = sky-top so the area outside world bounds blends in.
     this.cameras.main.setBackgroundColor('#5DBFF0');
+  }
+
+  drawClouds() {
+    const { worldWidth: w, worldHeight: h } = this.level;
+    const CLOUD_SIZES = { 'cloud-1': [140, 70], 'cloud-2': [180, 70], 'cloud-3': [90, 45] };
+    const placements = [
+      { key: 'cloud-1', xFrac: 0.15, yFrac: 0.08 },
+      { key: 'cloud-3', xFrac: 0.38, yFrac: 0.05 },
+      { key: 'cloud-2', xFrac: 0.60, yFrac: 0.10 },
+      { key: 'cloud-1', xFrac: 0.80, yFrac: 0.06 },
+      { key: 'cloud-3', xFrac: 0.92, yFrac: 0.12 },
+    ];
+    for (const { key, xFrac, yFrac } of placements) {
+      if (!this.textures.exists(key) || !assets.has(key)) continue;
+      const [dw, dh] = CLOUD_SIZES[key];
+      this.add.image(xFrac * w, yFrac * h, key)
+        .setDisplaySize(dw, dh)
+        .setDepth(-50)
+        .setAlpha(0.9);
+    }
   }
 
   drawBlueprintGrid() {
@@ -1254,24 +1284,22 @@ export class LevelScene extends Phaser.Scene {
     const cx = c.position.x, cy = c.position.y;
     const key = this._vehiclePreset;
 
-    // Wheels stay as physics-positioned circles regardless of chassis art path.
+    if (this.textures.exists(key) && assets.has(key)) {
+      if (!this._vehicleSprite) {
+        this._vehicleSprite = this.add.image(cx, cy, key).setOrigin(0.5, 0.5).setDepth(2).setDisplaySize(120, 72);
+      }
+      this._vehicleSprite.setTexture(key).setVisible(true)
+        .setDisplaySize(120, 72).setPosition(cx, cy).setRotation(c.angle);
+      return;
+    }
+    this._vehicleSprite?.setVisible(false);
+
+    // Procedural fallback — Poly Bridge style rectangle chassis + wheels.
     this.vehicleGraphics.fillStyle(0x222222, 1);
     if (v.wheelA) {
       this.vehicleGraphics.fillCircle(v.wheelA.position.x, v.wheelA.position.y, 10);
       this.vehicleGraphics.fillCircle(v.wheelB.position.x, v.wheelB.position.y, 10);
     }
-
-    if (this.textures.exists(key) && assets.has(key)) {
-      if (!this._vehicleSprite) {
-        this._vehicleSprite = this.add.image(cx, cy, key).setOrigin(0.5, 0.5).setDepth(2);
-      }
-      this._vehicleSprite.setTexture(key).setVisible(true)
-        .setPosition(cx, cy).setRotation(c.angle);
-      return;
-    }
-    this._vehicleSprite?.setVisible(false);
-
-    // Procedural fallback — Poly Bridge style rectangle chassis.
     const cos = Math.cos(c.angle), sin = Math.sin(c.angle);
     const hw = 40, hh = 12;
     const corners = [
@@ -1284,5 +1312,51 @@ export class LevelScene extends Phaser.Scene {
     this.vehicleGraphics.fillPoints(corners, true);
     this.vehicleGraphics.lineStyle(2, 0x331a00, 1);
     this.vehicleGraphics.strokePoints(corners, true);
+  }
+
+  _handleSave() {
+    saveLayout(this.levelId, this.joints, this.beams, this._vehiclePreset);
+    bus.emit('layout:saved');
+  }
+
+  _handleLoad() {
+    const data = loadLayout(this.levelId);
+    if (!data) return;
+    this._loadFromSave(data);
+  }
+
+  _loadFromSave(data) {
+    // hardReset clears to anchors-only, exits test mode, wipes physics.
+    this.hardReset();
+
+    // Build a lookup of all joint objects (anchors already in this.joints after hardReset).
+    const jointMap = new Map(this.joints.map(j => [j.bodyId, j]));
+
+    // Restore saved mid-joints.
+    for (const saved of data.joints) {
+      const entry = { x: saved.x, y: saved.y, isAnchor: false, bodyId: saved.id };
+      this.joints.push(entry);
+      jointMap.set(saved.id, entry);
+    }
+
+    // Restore saved beams.
+    for (const savedBeam of data.beams) {
+      const jA = jointMap.get(savedBeam.a);
+      const jB = jointMap.get(savedBeam.b);
+      if (!jA || !jB) continue;
+      const material = savedBeam.material === 'road'
+        ? this.level.materials.road
+        : this.level.materials.wood;
+      this.beams.push({ a: jA, b: jB, material, constraint: null });
+    }
+
+    // Rebuild physics from the restored this.joints + this.beams.
+    this.rebuildBridge();
+
+    // Restore vehicle selection.
+    if (data.vehicle) this._selectVehicle(data.vehicle);
+
+    this.redrawBeams();
+    this.redrawJoints(new Map());
   }
 }
