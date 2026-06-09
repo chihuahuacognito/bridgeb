@@ -18,7 +18,9 @@ export function loadLayout(levelId) {
   const raw = localStorage.getItem(KEY(levelId));
   if (!raw) return null;
   try {
-    return JSON.parse(raw);
+    const data = JSON.parse(raw);
+    if (!data || typeof data !== 'object' || !Array.isArray(data.joints) || !Array.isArray(data.beams)) return null;
+    return data;
   } catch {
     return null;
   }

@@ -35,6 +35,11 @@ describe('saveLayout / loadLayout round-trip', () => {
     expect(loadLayout('L1')).toBeNull();
   });
 
+  it('returns null for structurally invalid data', () => {
+    localStorage.setItem('bridgebuilder:save:L1', '"just-a-string"');
+    expect(loadLayout('L1')).toBeNull();
+  });
+
   it('serializes only non-anchor joints', () => {
     saveLayout('L1', [...ANCHORS, MID], [], 'car');
     const data = loadLayout('L1');
