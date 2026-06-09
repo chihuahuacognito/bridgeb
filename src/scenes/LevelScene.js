@@ -1296,9 +1296,36 @@ export class LevelScene extends Phaser.Scene {
   _deleteBeam(index) {
     const beam = this.beams[index];
     if (!beam) return;
+
+    // Find and remove the undo entry so budget is refunded and undo stack stays clean.
+    const undoIdx = this._undoStack.findIndex(e => e.beam === beam);
+    let cost = 0;
+    let newJoints = [];
+    if (undoIdx !== -1) {
+      ({ cost, newJoints } = this._undoStack[undoIdx]);
+      this._undoStack.splice(undoIdx, 1);
+    }
+
     physics.removeBeam(beam.constraint);
     this.beams.splice(index, 1);
+
+    // Remove joints that were created for this beam and are now unconnected.
+    for (const j of newJoints) {
+      const stillUsed = this.beams.some(b => b.a.bodyId === j.bodyId || b.b.bodyId === j.bodyId);
+      if (!stillUsed) {
+        physics.removeJointNode(j.bodyId);
+        const ji = this.joints.indexOf(j);
+        if (ji !== -1) this.joints.splice(ji, 1);
+      }
+    }
+
+    if (cost > 0) {
+      this._budgetRemaining += cost;
+      this._updateBudgetDisplay();
+    }
+
     this._hoverTarget = null;
+    this._updateUndoBtn();
     this.redrawBeams();
     this.redrawJoints(new Map());
   }
