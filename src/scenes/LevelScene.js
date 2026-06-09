@@ -150,7 +150,8 @@ export class LevelScene extends Phaser.Scene {
     this._debrisGfx      = this.add.graphics().setDepth(5);
     this.snapTarget = null;
 
-    this.sys.game.canvas.addEventListener('contextmenu', (e) => e.preventDefault());
+    this._onContextMenu = (e) => e.preventDefault();
+    this.sys.game.canvas.addEventListener('contextmenu', this._onContextMenu);
     this.input.on('pointerdown', (pointer) => {
       if (pointer.rightButtonDown()) {
         this._handleRightClickDelete(pointer);
@@ -275,6 +276,7 @@ export class LevelScene extends Phaser.Scene {
       bus.off('gravity:preset', this._busHandlers.gravityPreset);
       bus.off('layout:save',    this._busHandlers.layoutSave);
       bus.off('layout:load',    this._busHandlers.layoutLoad);
+      this.sys.game.canvas.removeEventListener('contextmenu', this._onContextMenu);
     });
   }
 
