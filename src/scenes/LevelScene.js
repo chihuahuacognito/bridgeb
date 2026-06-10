@@ -372,14 +372,22 @@ export class LevelScene extends Phaser.Scene {
 
   drawTerrain() {
     const { left, right } = this.level.terrain;
+    const { worldWidth: W } = this.level;
+    // Extra pixels each cliff extends beyond the world edge so no gap shows
+    // between the sprite and the screen edge at any resolution or camera offset.
+    const OVERFLOW = 500;
     for (const [side, key] of [[left, 'cliff-left'], [right, 'cliff-right']]) {
       if (this.textures.exists(key) && assets.has(key)) {
         const xs = side.verts.map(v => v.x);
         const ys = side.verts.map(v => v.y);
         const x0 = Math.min(...xs), y0 = Math.min(...ys);
         const x1 = Math.max(...xs), y1 = Math.max(...ys);
-        this.add.image(x0, y0, key).setOrigin(0, 0)
-          .setDisplaySize(x1 - x0, y1 - y0).setDepth(-40);
+        const isLeft = key === 'cliff-left';
+        // Left cliff: stretch leftward past x=0. Right cliff: stretch rightward past worldWidth.
+        const imgX = isLeft ? x0 - OVERFLOW : x0;
+        const imgW = isLeft ? (x1 - x0) + OVERFLOW : (W - x0) + OVERFLOW;
+        this.add.image(imgX, y0, key).setOrigin(0, 0)
+          .setDisplaySize(imgW, y1 - y0).setDepth(-40);
       } else {
         const g = this.add.graphics();
         g.fillStyle(side.color ?? 0x2c3033, 1);
@@ -393,10 +401,20 @@ export class LevelScene extends Phaser.Scene {
   drawRocks() {
     const g = this.add.graphics();
     for (const rock of (this.level.rocks ?? [])) {
-      g.fillStyle(rock.color ?? 0x8b6a2e, 1);
-      g.fillPoints(rock.verts, true);
-      g.lineStyle(2, 0x1a1d20, 1);
-      g.strokePoints(rock.verts, true);
+      const key = rock.sprite;
+      if (key && this.textures.exists(key) && assets.has(key)) {
+        const xs = rock.verts.map(v => v.x);
+        const ys = rock.verts.map(v => v.y);
+        const x0 = Math.min(...xs), y0 = Math.min(...ys);
+        const x1 = Math.max(...xs), y1 = Math.max(...ys);
+        this.add.image(x0, y0, key).setOrigin(0, 0)
+          .setDisplaySize(x1 - x0, y1 - y0).setDepth(-40);
+      } else {
+        g.fillStyle(rock.color ?? 0x8b6a2e, 1);
+        g.fillPoints(rock.verts, true);
+        g.lineStyle(2, 0x1a1d20, 1);
+        g.strokePoints(rock.verts, true);
+      }
     }
   }
 

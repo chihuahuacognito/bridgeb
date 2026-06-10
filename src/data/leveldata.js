@@ -89,6 +89,7 @@ export const DEV_STRESS = {
   rocks: [
     {
       id: 'C1',
+      sprite: 'rock-pillar',
       // Tapered pillar: narrow at top, wider at base (submerged below waterY 660)
       verts: [
         { x: 612, y: 530 },

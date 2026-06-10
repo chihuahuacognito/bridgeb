@@ -4,7 +4,7 @@ import { assets } from '../systems/assets.js';
 
 const WORLD_ASSET_KEYS = [
   'background',
-  'cliff-left', 'cliff-right',
+  'cliff-left', 'cliff-right', 'rock-pillar',
   'car', 'truck', 'tank',
   'cloud-1', 'cloud-2', 'cloud-3',
   'water', 'flag', 'tree',
