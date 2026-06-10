@@ -23,6 +23,10 @@ const SNAP_ABS_PX  = 8;
 // Chassis mask now excludes beams (~0x0004) so only wheels contact road;
 // without overlap those 10px wheels can slip through a zero-width junction.
 const BEAM_OVERHANG = 6;
+// Small circle placed at each beam end, offset perpendicular-down by CAP_RADIUS
+// so its top is flush with the beam surface. Gives wheels a smooth curved
+// transition at joints instead of catching on the rectangular beam edge.
+const CAP_RADIUS = 5;
 
 // Visual strain saturation point: the stretch ratio at which the visual
 // stress signal reads 1.0. Independent of material.snapThreshold so future
@@ -68,9 +72,11 @@ const physics = {
       ];
       for (const b of this._beamConstraints) {
         toRemove.push(b.constraint);
-        if (b.body) toRemove.push(b.body);
+        if (b.body)    toRemove.push(b.body);
         if (b.attachA) toRemove.push(b.attachA);
         if (b.attachB) toRemove.push(b.attachB);
+        if (b.capA)    toRemove.push(b.capA);
+        if (b.capB)    toRemove.push(b.capB);
       }
       if (this._vehicle) {
         toRemove.push(this._vehicle.chassis);
@@ -215,13 +221,32 @@ const physics = {
       });
     }
 
+    // One cap circle per beam end, offset perpendicular-down by CAP_RADIUS so
+    // the cap top is flush with the beam surface. Wheels ride over the convex
+    // arc instead of catching the rectangular beam edge at the joint.
+    // category/mask/group mirror beam bodies so caps interact only with wheels.
+    let capA = null, capB = null;
+    if (isRoad) {
+      const capOpts = {
+        isStatic: true,
+        label: 'beam-cap',
+        friction: 0.6,
+        restitution: 0,
+        collisionFilter: { category: 0x0004, mask: 0x0001, group: -1 },
+      };
+      const pdx = perpDownX * CAP_RADIUS;
+      const pdy = perpDownY * CAP_RADIUS;
+      capA = this._scene.matter.add.circle(bodyA.position.x + pdx, bodyA.position.y + pdy, CAP_RADIUS, capOpts);
+      capB = this._scene.matter.add.circle(bodyB.position.x + pdx, bodyB.position.y + pdy, CAP_RADIUS, capOpts);
+    }
+
     this._beamConstraints.push({
       constraint, material, body: beamBody,
       attachA: null, attachB: null,
       kinematic: !bothStatic,
       type: material.type,
-      // Track current body width so _updateKinematicBeams can resize it as beams stretch.
       _scaledLength: (!bothStatic && isRoad) ? (length + 2 * BEAM_OVERHANG) : null,
+      capA, capB,
     });
     return constraint;
   },
@@ -251,6 +276,8 @@ const physics = {
     if (entry.body)    toRemove.push(entry.body);
     if (entry.attachA) toRemove.push(entry.attachA);
     if (entry.attachB) toRemove.push(entry.attachB);
+    if (entry.capA)    toRemove.push(entry.capA);
+    if (entry.capB)    toRemove.push(entry.capB);
     this._scene.matter.world.remove(toRemove);
     this._beamConstraints.splice(idx, 1);
   },
@@ -599,6 +626,19 @@ const physics = {
 
       this._scene.matter.body.setPosition(b.body, { x: cx, y: cy });
       this._scene.matter.body.setAngle(b.body, angle);
+
+      if (b.capA) {
+        this._scene.matter.body.setPosition(b.capA, {
+          x: aPos.x + perpDownX * CAP_RADIUS,
+          y: aPos.y + perpDownY * CAP_RADIUS,
+        });
+      }
+      if (b.capB) {
+        this._scene.matter.body.setPosition(b.capB, {
+          x: bPos.x + perpDownX * CAP_RADIUS,
+          y: bPos.y + perpDownY * CAP_RADIUS,
+        });
+      }
     }
   },
 

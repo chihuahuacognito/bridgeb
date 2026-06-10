@@ -16,6 +16,7 @@ const config = {
   width: 1280,
   height: 720,
   backgroundColor: '#87ceeb',
+  resolution: window.devicePixelRatio || 1,
   scale: { mode: Phaser.Scale.FIT, autoCenter: Phaser.Scale.CENTER_BOTH },
   physics: {
     default: 'matter',

@@ -3,6 +3,7 @@ import Phaser from 'phaser';
 import { assets } from '../systems/assets.js';
 
 const WORLD_ASSET_KEYS = [
+  'background',
   'cliff-left', 'cliff-right',
   'car', 'truck', 'tank',
   'cloud-1', 'cloud-2', 'cloud-3',

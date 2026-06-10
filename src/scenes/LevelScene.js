@@ -71,15 +71,15 @@ const VIZ = {
 
   // Grid
   GRID_COLOR: 0x9aa0a8,
-  GRID_ALPHA: 0.18,
+  GRID_ALPHA: 0.16,
   GRID_STEP:  40,
 
   // Blueprint build-mode background
   BLUEPRINT_BG:          '#1e2d4a',
   BLUEPRINT_MINOR:       0xffffff,
-  BLUEPRINT_MINOR_ALPHA: 0.10,
+  BLUEPRINT_MINOR_ALPHA: 0.19,
   BLUEPRINT_MAJOR:       0x7ab8d8,
-  BLUEPRINT_MAJOR_ALPHA: 0.28,
+  BLUEPRINT_MAJOR_ALPHA: 0.19,
   BLUEPRINT_MAJOR_STEP:  160,
   TEST_BG:               '#b2b9c2',
 };
@@ -282,9 +282,15 @@ export class LevelScene extends Phaser.Scene {
 
   drawSky() {
     const { worldWidth: w, worldHeight: h } = this.level;
+    if (this.textures.exists('background') && assets.has('background')) {
+      this._skyGfx = this.add.image(0, 0, 'background')
+        .setOrigin(0, 0).setDisplaySize(w, h).setDepth(-100);
+      this.cameras.main.setBackgroundColor('#5DBFF0');
+      return;
+    }
     const g = this.add.graphics().setDepth(-100);
-    const topR = 0x5D, topG = 0xBF, topB = 0xF0;   // --sky-top
-    const botR = 0xBD, botG = 0xE7, botB = 0xFB;   // --sky-bottom
+    const topR = 0x5D, topG = 0xBF, topB = 0xF0;
+    const botR = 0xBD, botG = 0xE7, botB = 0xFB;
     const STEPS = 60;
     for (let i = 0; i < STEPS; i++) {
       const t = i / (STEPS - 1);
@@ -295,7 +301,6 @@ export class LevelScene extends Phaser.Scene {
       g.fillRect(0, Math.floor((i * h) / STEPS), w, Math.ceil(h / STEPS) + 1);
     }
     this._skyGfx = g;
-    // Camera bg = sky-top so the area outside world bounds blends in.
     this.cameras.main.setBackgroundColor('#5DBFF0');
   }
 
