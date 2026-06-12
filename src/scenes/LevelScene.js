@@ -1,8 +1,11 @@
 // src/scenes/LevelScene.js
 import Phaser from 'phaser';
 import GUI from 'lil-gui';
-import { ALL_LEVELS } from '../data/leveldata.js';
+import { ALL_LEVELS, LEVEL_ORDER } from '../data/leveldata.js';
 import physics from '../systems/physics.js';
+import tutorial from '../systems/tutorial.js';
+import { expandPrebuilt } from '../utils/prebuilt.js';
+import { resolveVehicleDesign } from '../utils/vehicleDesign.js';
 import audio from '../systems/audio.js';
 import juice from '../systems/juice.js';
 import cam from '../systems/camera.js';
@@ -127,6 +130,10 @@ export class LevelScene extends Phaser.Scene {
     this._blockState = { freeform: false, material: null, size: null, blockLength: 0 };
     this._undoStack  = [];
     this._freeformPendingNewJoint = null;
+    this._removeMode = false;
+    this._ui = this.level.ui ?? {};
+    this._prebuiltCost = expandPrebuilt(this.level).cost;
+    this._applyPrebuilt();
   }
 
   create() {
@@ -176,6 +183,8 @@ export class LevelScene extends Phaser.Scene {
     audio.attach(this);
     juice.attach(this);
     cam.attach(this);
+    tutorial.attach(this);
+    if (this.level.prebuilt) this.rebuildBridge(); // creates constraints for prebuilt beams
 
     physics.setOnSnap((c) => {
       const mx = (c.bodyA.position.x + c.bodyB.position.x) / 2;
@@ -194,10 +203,10 @@ export class LevelScene extends Phaser.Scene {
 
     this.mode = 'build';                 // 'build' | 'test'
     this.material = this.level.materials.road; // default: road placement
-    this._budgetRemaining = this.level.budget;
+    this._budgetRemaining = this._freshBudget();
     this.beamConstraints = [];           // mirrors physics._beamConstraints, for rendering
 
-    this._vehiclePreset = VEHICLE_PRESETS[0].key;
+    this._vehiclePreset = this.level.vehicles[0]?.type ?? VEHICLE_PRESETS[0].key;
     const _vp0 = VEHICLE_PRESETS[0];
     this._cheatParams = {
       weight:              _vp0.weight,
@@ -220,7 +229,9 @@ export class LevelScene extends Phaser.Scene {
 
     // Keyboard shortcuts route through the bus so the HTML toolbar stays in sync.
     this.input.keyboard.on('keydown-R', () => bus.emit('tool:select', 'road'));
-    this.input.keyboard.on('keydown-B', () => bus.emit('tool:select', 'beam'));
+    this.input.keyboard.on('keydown-B', () => {
+      if (this.level.materials.wood) bus.emit('tool:select', 'beam');
+    });
     this.input.keyboard.on('keydown-F', () => bus.emit('tool:select', 'free'));
     this.input.keyboard.on('keydown-Z', (ev) => { if (ev.ctrlKey || ev.metaKey) this._undoLastPlacement(); });
     this.input.keyboard.on('keydown-ONE',   () => this._selectVehicle('car'));
@@ -230,6 +241,7 @@ export class LevelScene extends Phaser.Scene {
     // Start paused: pause Matter until the player hits TEST.
     physics.setRunnerEnabled(false);
     this.redrawJoints(new Map());
+    this.redrawBeams();
 
     // ── HTML UI bus wiring ──────────────────────────────────────────────────
     this._busHandlers = {
@@ -242,6 +254,13 @@ export class LevelScene extends Phaser.Scene {
       gravityPreset: (k) => this._applyGravityPreset(k),
       layoutSave:    () => this._handleSave(),
       layoutLoad:    () => this._handleLoad(),
+      levelRetry: () => { if (this.mode === 'test') this.toggleTest(); },
+      levelNext:  () => {
+        const i = LEVEL_ORDER.indexOf(this.levelId);
+        const next = i >= 0 ? LEVEL_ORDER[i + 1] : null;
+        if (next) this.scene.start('LevelScene', { levelId: next });
+      },
+      levelMenu:  () => this.scene.start('MenuScene'),
     };
     bus.on('undo',           this._busHandlers.undo);
     bus.on('clear',          this._busHandlers.clear);
@@ -252,19 +271,26 @@ export class LevelScene extends Phaser.Scene {
     bus.on('gravity:preset', this._busHandlers.gravityPreset);
     bus.on('layout:save',    this._busHandlers.layoutSave);
     bus.on('layout:load',    this._busHandlers.layoutLoad);
+    bus.on('level:retry', this._busHandlers.levelRetry);
+    bus.on('level:next',  this._busHandlers.levelNext);
+    bus.on('level:menu',  this._busHandlers.levelMenu);
 
     // Initial sync — listeners are now wired in mountUi() (runs before Phaser).
+    bus.emit('ui:screen', 'level');
+    bus.emit('ui:config', this._ui);
     bus.emit('budget:update', this._budgetRemaining);
     bus.emit('vehicle:active', this._vehiclePreset);
     bus.emit('mode:changed', 'build');
     bus.emit('tool:select', 'road');
     bus.emit('layout:load-available', hasSave(this.levelId));
+    tutorial.showIntro(this.level);
 
     this.events.on('shutdown', () => {
       physics.detach(this);
       audio.detach(this);
       juice.detach(this);
       cam.detach(this);
+      tutorial.detach(this);
       this._gui?.destroy();
       this._ghost?.destroy();
       bus.off('undo',           this._busHandlers.undo);
@@ -276,6 +302,9 @@ export class LevelScene extends Phaser.Scene {
       bus.off('gravity:preset', this._busHandlers.gravityPreset);
       bus.off('layout:save',    this._busHandlers.layoutSave);
       bus.off('layout:load',    this._busHandlers.layoutLoad);
+      bus.off('level:retry', this._busHandlers.levelRetry);
+      bus.off('level:next',  this._busHandlers.levelNext);
+      bus.off('level:menu',  this._busHandlers.levelMenu);
       this.sys.game.canvas.removeEventListener('contextmenu', this._onContextMenu);
     });
   }
@@ -444,6 +473,12 @@ export class LevelScene extends Phaser.Scene {
   handleClick(pointer) {
     if (this.mode !== 'build') return;
     if (isOverHtmlChrome(pointer)) return;
+    if (this._removeMode) {
+      const target = this._findHoverTarget(pointer.worldX, pointer.worldY);
+      if (target?.type === 'beam') this._deleteBeam(target.index);
+      else if (target?.type === 'joint') this._deleteJoint(target.index);
+      return;
+    }
     if (this._blockState.freeform) {
       this._handleFreeformClick(pointer);
     } else if (this._blockState.material && this._blockState.size) {
@@ -494,7 +529,7 @@ export class LevelScene extends Phaser.Scene {
       const matA = physics._nodes.get(this.pendingJointA.bodyId);
       const matB = physics._nodes.get(endpoint.bodyId);
       const constraint = physics.buildBeam(matA, matB, this.material);
-      const beam = { a: this.pendingJointA, b: endpoint, material: this.material, constraint };
+      const beam = { a: this.pendingJointA, b: endpoint, material: this.material, constraint, cost };
       this.beams.push(beam);
       if (!beamSnapResult) {
         const newJoints = [];
@@ -532,7 +567,7 @@ export class LevelScene extends Phaser.Scene {
     if (!bodyA || !bodyB) return;
 
     const constraint = physics.buildBeam(bodyA, bodyB, mat);
-    const beam = { a: anchorJoint, b: endJoint, material: mat, constraint };
+    const beam = { a: anchorJoint, b: endJoint, material: mat, constraint, cost };
     this.beams.push(beam);
     this._undoStack.push({ beam, newJoints, cost });
     this._updateUndoBtn();
@@ -644,6 +679,7 @@ export class LevelScene extends Phaser.Scene {
   }
 
   _selectVehicle(key) {
+    if (this._ui.vehicleSelect === false) return;
     const preset = VEHICLE_PRESETS.find(p => p.key === key);
     if (!preset) return;
     this._vehiclePreset = key;
@@ -697,7 +733,7 @@ export class LevelScene extends Phaser.Scene {
     this.material = this.level.materials.road;
     this.redrawBeams();
     this.redrawJoints(new Map());
-    this._budgetRemaining = this.level.budget;
+    this._budgetRemaining = this._freshBudget();
     this._updateBudgetDisplay();
   }
 
@@ -1146,13 +1182,10 @@ export class LevelScene extends Phaser.Scene {
       physics.setTimeScale(1.0);
       physics.setGravity(this._cheatParams.gravityY);
       physics.setRunnerEnabled(true);   // start simulating
+      const design = resolveVehicleDesign(this.level, VEHICLE_PRESETS, this._vehiclePreset);
       const vehicleConfig = {
         ...this.level.vehicles[0], // spec §2 rule 3: always an array
-        ...vehicleParamsFromDesign({
-          weight:       this._cheatParams.weight,
-          speed:        this._cheatParams.speed,
-          acceleration: this._cheatParams.acceleration,
-        }),
+        ...vehicleParamsFromDesign(design),
       };
       physics.spawnVehicle(vehicleConfig);
       cam.follow(() => physics.getVehicleChassisPosition());
@@ -1162,6 +1195,7 @@ export class LevelScene extends Phaser.Scene {
       this._updateUndoBtn();
       this._setTestMode();
       this._ghost.hide();
+      tutorial.hideCard();
       this._hoverTarget = null;
       bus.emit('mode:changed', 'test');
     } else {
@@ -1185,7 +1219,7 @@ export class LevelScene extends Phaser.Scene {
       this.winOverlay?.destroy(); this.winOverlay = null;
       this.failOverlay?.destroy(); this.failOverlay = null;
       this.testEndAt = 0;
-      this._budgetRemaining = this.level.budget;
+      this._budgetRemaining = this._freshBudget();
       this._updateBudgetDisplay();
       bus.emit('mode:changed', 'build');
     }
@@ -1193,8 +1227,10 @@ export class LevelScene extends Phaser.Scene {
 
   _onToolSelect(toolKey) {
     if (toolKey === 'road' || toolKey === 'beam') {
+      this._removeMode = false;
       const matKey = toolKey === 'road' ? 'road' : 'wood';
       const mat = this.level.materials[matKey];
+      if (!mat) return;
       const currentSize = this._blockState.size ?? 'M';
       const block = mat.blocks[currentSize] ?? mat.blocks.M ?? Object.values(mat.blocks)[0];
       const sizeKey = block === mat.blocks[currentSize] ? currentSize : 'M';
@@ -1207,12 +1243,20 @@ export class LevelScene extends Phaser.Scene {
       const sizes = Object.entries(mat.blocks).map(([key, b]) => ({ key, length: b.length, cost: b.cost }));
       bus.emit('sizes:show', { sizes, current: this._blockState.size });
     } else if (toolKey === 'free') {
+      this._removeMode = false;
       this._blockState.freeform = !this._blockState.freeform;
       this._blockState.material = null;
       this._blockState.size = null;
       this._blockState.blockLength = 0;
       this._ghost.hide();
       this.pendingJointA = null;
+      bus.emit('sizes:hide');
+    } else if (toolKey === 'remove') {
+      if (this._ui.delete === false) return;
+      this._removeMode = true;
+      this._blockState = { freeform: false, material: null, size: null, blockLength: 0 };
+      this.pendingJointA = null;
+      this._ghost.hide();
       bus.emit('sizes:hide');
     } else if (toolKey === 'zoom-in') {
       this.cameras.main.setZoom(Math.min(this.cameras.main.zoom * 1.1, 2.5));
@@ -1269,6 +1313,27 @@ export class LevelScene extends Phaser.Scene {
     ];
     this._firstBreakPos = null;
     this._debris = [];
+    this._applyPrebuilt();
+  }
+
+  // Push the level's prebuilt joints/beams into the scene data arrays.
+  // Pure data — physics is created by the next rebuildBridge() call.
+  _applyPrebuilt() {
+    if (!this.level.prebuilt) return;
+    const { joints, beams } = expandPrebuilt(this.level);
+    this.joints.push(...joints);
+    const byId = new Map(this.joints.map(j => [j.bodyId, j]));
+    for (const b of beams) {
+      const jA = byId.get(b.a);
+      const jB = byId.get(b.b);
+      if (!jA || !jB) continue;
+      this.beams.push({ a: jA, b: jB, material: b.material, cost: b.cost, constraint: null });
+    }
+  }
+
+  // Budget always starts net of the prebuilt bridge cost (spec).
+  _freshBudget() {
+    return this.level.budget - this._prebuiltCost;
   }
 
   update(_time, delta) {
@@ -1307,6 +1372,7 @@ export class LevelScene extends Phaser.Scene {
   }
 
   _handleRightClickDelete(pointer) {
+    if (this._ui.delete === false) return;
     if (this.mode !== 'build') return;
     const target = this._findHoverTarget(pointer.worldX, pointer.worldY);
     if (!target) return;
@@ -1329,6 +1395,8 @@ export class LevelScene extends Phaser.Scene {
     if (undoIdx !== -1) {
       ({ cost, newJoints } = this._undoStack[undoIdx]);
       this._undoStack.splice(undoIdx, 1);
+    } else {
+      cost = beam.cost ?? 0;
     }
 
     physics.removeBeam(beam.constraint);
@@ -1392,6 +1460,7 @@ export class LevelScene extends Phaser.Scene {
   }
 
   showFail() {
+    tutorial.onFail(this.level);
     cam.follow(null); // stop chasing the vehicle as it falls through the broken bridge
     this.failOverlay = this.add.text(640, 360, 'BRIDGE FAILED',
       { fontSize: '64px', color: '#ff3333', fontStyle: 'bold' })
@@ -1400,10 +1469,17 @@ export class LevelScene extends Phaser.Scene {
   }
 
   showWin() {
-    this.winOverlay = this.add.text(640, 360, 'BRIDGE HOLDS',
-      { fontSize: '64px', color: '#33cc33', fontStyle: 'bold' })
-      .setOrigin(0.5).setScrollFactor(0);
-    this.endTest();
+    physics.freezeVehicle();
+    this.testEndAt = 0; // no auto-return on win — the modal owns the exit
+    cam.follow(null);
+    const i = LEVEL_ORDER.indexOf(this.levelId);
+    bus.emit('level:result', {
+      won: true,
+      text: this.level.tutorial?.success?.text ?? '',
+      budgetLeft: this._budgetRemaining,
+      hasNext: i >= 0 && i < LEVEL_ORDER.length - 1,
+    });
+    this.winOverlay = { destroy: () => bus.emit('level:result-hide') };
   }
 
   // Called when win or fail triggers: freeze the car and schedule auto-return
