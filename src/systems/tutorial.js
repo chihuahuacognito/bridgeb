@@ -17,6 +17,7 @@ const tutorial = {
   _failCount: 0,
 
   attach() {
+    this.hideCard(); // drop any stale card reference from a previous scene
     this._root = typeof document !== 'undefined'
       ? document.getElementById('ui-modals')
       : null;
