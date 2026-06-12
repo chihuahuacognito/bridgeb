@@ -23,5 +23,14 @@ export function mountUi(opts) {
     root.classList.add(`mode-${mode}`);
   });
 
+  bus.on('ui:config', (cfg) => {
+    const sidebar = document.getElementById('ui-sidebar');
+    if (sidebar) sidebar.style.display = cfg?.vehicleSelect === false ? 'none' : '';
+  });
+
+  bus.on('ui:screen', (screen) => {
+    root.classList.toggle('screen-menu', screen === 'menu');
+  });
+
   if (opts.initialVehicle) bus.emit('vehicle:active', opts.initialVehicle);
 }

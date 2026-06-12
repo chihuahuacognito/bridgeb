@@ -27,7 +27,8 @@ export function mountTopBar(root) {
   });
   root.appendChild(cta);
 
-  root.appendChild(BudgetChip());
+  const budgetChip = BudgetChip();
+  root.appendChild(budgetChip);
 
   const saveBtn = IconButton({
     icon: I.save(), label: 'SAVE',
@@ -46,6 +47,10 @@ export function mountTopBar(root) {
 
   bus.on('mode:changed', (mode) => {
     cta.setLabel(mode === 'test' ? 'RESET SIM' : 'TEST');
+  });
+
+  bus.on('ui:config', (cfg) => {
+    budgetChip.style.display = cfg?.budgetMeter === false ? 'none' : '';
   });
 
   bus.on('layout:saved', () => {

@@ -1,3 +1,36 @@
 @import './tokens.css';
 @import './base.css';
 @import './components.css';
+
+/* ── Level progression: menu screen hides game chrome ─────────────────── */
+#ui-root.screen-menu #ui-topbar,
+#ui-root.screen-menu #ui-sidebar,
+#ui-root.screen-menu #ui-toolbar,
+#ui-root.screen-menu #ui-hud,
+#ui-root.screen-menu #ui-size-row { display: none; }
+
+/* ── Tutorial card ─────────────────────────────────────────────────────── */
+.tutorial-card {
+  position: absolute; left: 50%; bottom: 120px; transform: translateX(-50%);
+  background: #16243d; border: 2px solid #f5d400; border-radius: 16px;
+  padding: 18px 28px; color: #fff; text-align: center;
+  pointer-events: auto; cursor: pointer; max-width: 480px;
+  font-family: 'Fredoka', sans-serif;
+}
+.tutorial-card .tut-icon { font-size: 44px; line-height: 1.1; }
+.tutorial-card .tut-text { font-size: 20px; margin-top: 6px; }
+
+/* ── Win result modal ──────────────────────────────────────────────────── */
+.result-modal {
+  position: absolute; inset: 0; display: flex;
+  align-items: center; justify-content: center; pointer-events: auto;
+}
+.result-card {
+  background: #16243d; border: 2px solid #7ab8d8; border-radius: 16px;
+  padding: 28px 44px; text-align: center; color: #fff;
+  font-family: 'Fredoka', sans-serif;
+}
+.result-card h2 { margin: 0 0 8px; font-size: 32px; }
+.result-card.result-win h2 { color: #5ab942; }
+.result-budget { color: #f5d400; font-size: 18px; }
+.result-buttons { display: flex; gap: 12px; justify-content: center; margin-top: 16px; }

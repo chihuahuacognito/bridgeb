@@ -10,7 +10,7 @@ const ACTIVE_TOOLS = [
   { tool: 'cable',     label: 'CABLE',     iconSvg: I.cable(),     accent: undefined, disabled: true },
   { tool: 'hydraulic', label: 'HYDRAULIC', iconSvg: I.hydraulic(), accent: 'gray',   disabled: true },
   { tool: 'spring',    label: 'SPRING',    iconSvg: I.spring(),    accent: 'purple', disabled: true },
-  { tool: 'remove',    label: 'REMOVE',    iconSvg: I.remove(),    accent: 'red',    disabled: true },
+  { tool: 'remove',    label: 'REMOVE',    iconSvg: I.remove(),    accent: 'red',    disabled: false },
 ];
 
 const UTILITY = [
@@ -52,6 +52,14 @@ export function mountToolbar(root) {
     for (const [tool, el] of Object.entries(tiles)) {
       if (tool === key) el.dataset.active = 'true';
       else delete el.dataset.active;
+    }
+  });
+
+  bus.on('ui:config', (cfg) => {
+    const allowed = cfg?.tools;
+    for (const t of ACTIVE_TOOLS) {
+      tiles[t.tool].style.display =
+        allowed && !allowed.includes(t.tool) ? 'none' : '';
     }
   });
 }
