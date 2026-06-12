@@ -100,6 +100,8 @@ export const L01 = level({
   },
 });
 
+// NOTE: vehicles[].design is consumed by resolveVehicleDesign() (implemented in a later plan task).
+// Until that lands, the field is data-only and has no runtime effect.
 export const L02 = level({
   id: 'L02', title: 'Try Again!', phase: 'tutorial',
   span: 3.2, budget: 40,

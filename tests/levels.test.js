@@ -18,6 +18,10 @@ describe('LEVEL_ORDER', () => {
     expect(ALL_LEVELS.DEV_STRESS).toBe(DEV_STRESS); // still reachable for the dev flag
   });
 
+  it('covers every non-DEV_STRESS key of ALL_LEVELS', () => {
+    expect(new Set(LEVEL_ORDER)).toEqual(new Set(Object.keys(ALL_LEVELS).filter(k => k !== 'DEV_STRESS')));
+  });
+
   it('phases run tutorial ×3, topic ×6, challenge ×3 in order', () => {
     const phases = LEVEL_ORDER.map(id => ALL_LEVELS[id].phase);
     expect(phases).toEqual([

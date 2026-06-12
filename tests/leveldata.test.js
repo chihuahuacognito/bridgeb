@@ -1,7 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { ALL_LEVELS, DEV_STRESS } from '../src/data/leveldata.js';
-
-const L04 = ALL_LEVELS.L04;
+import { L04, DEV_STRESS } from '../src/data/leveldata.js';
 
 describe('leveldata terrain schema', () => {
   it('L04 has terrain.left and terrain.right with verts and physRect', () => {

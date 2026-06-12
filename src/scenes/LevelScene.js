@@ -205,8 +205,8 @@ export class LevelScene extends Phaser.Scene {
       acceleration:        _vp0.acceleration,
       roadStiffness:       this.level.materials.road.stiffness,
       roadSnapThreshold:   this.level.materials.road.snapThreshold,
-      beamStiffness:       this.level.materials.wood.stiffness,
-      beamSnapThreshold:   this.level.materials.wood.snapThreshold,
+      beamStiffness:       this.level.materials.wood?.stiffness ?? 0.15,
+      beamSnapThreshold:   this.level.materials.wood?.snapThreshold ?? 0.18,
       visualFullStrain:    0.05,
       strainMed:           VIZ.STRAIN_MED,
       strainHigh:          VIZ.STRAIN_HIGH,
@@ -1108,13 +1108,15 @@ export class LevelScene extends Phaser.Scene {
       this.level.materials.road.snapThreshold = v;
     });
 
-    const beam = gui.addFolder('Material (Beam/Wood)');
-    beam.add(p, 'beamStiffness', 0.05, 1.0, 0.01).name('Stiffness').onChange(v => {
-      this.level.materials.wood.stiffness = v;
-    });
-    beam.add(p, 'beamSnapThreshold', 0.001, 0.5, 0.001).name('Snap Threshold').onChange(v => {
-      this.level.materials.wood.snapThreshold = v;
-    });
+    if (this.level.materials.wood) {
+      const beam = gui.addFolder('Material (Beam/Wood)');
+      beam.add(p, 'beamStiffness', 0.05, 1.0, 0.01).name('Stiffness').onChange(v => {
+        this.level.materials.wood.stiffness = v;
+      });
+      beam.add(p, 'beamSnapThreshold', 0.001, 0.5, 0.001).name('Snap Threshold').onChange(v => {
+        this.level.materials.wood.snapThreshold = v;
+      });
+    }
 
     const viz = gui.addFolder('Visual');
     viz.add(p, 'visualFullStrain', 0.001, 0.1, 0.001).name('Full Strain Sat').onChange(v => {
@@ -1493,7 +1495,7 @@ export class LevelScene extends Phaser.Scene {
       if (!jA || !jB) continue;
       const material = savedBeam.material === 'road'
         ? this.level.materials.road
-        : this.level.materials.wood;
+        : (this.level.materials.wood ?? this.level.materials.road);
       this.beams.push({ a: jA, b: jB, material, constraint: null });
     }
 
