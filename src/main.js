@@ -1,6 +1,7 @@
 import './ui-html/styles/index.css';
 import Phaser from 'phaser';
 import { BootScene } from './scenes/BootScene.js';
+import { MenuScene } from './scenes/MenuScene.js';
 import { LevelScene } from './scenes/LevelScene.js';
 import { mountUi } from './ui-html/index.js';
 
@@ -29,7 +30,7 @@ const config = {
       debug: false,
     },
   },
-  scene: [BootScene, LevelScene],
+  scene: [BootScene, MenuScene, LevelScene],
 };
 
 new Phaser.Game(config);
