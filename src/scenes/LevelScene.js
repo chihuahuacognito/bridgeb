@@ -729,6 +729,7 @@ export class LevelScene extends Phaser.Scene {
     this._updateUndoBtn();
     this._ghost.hide();
     this._blockState = { freeform: false, material: null, size: null, blockLength: 0 };
+    this._removeMode = false;
     this._ghost?.hide();
     this.material = this.level.materials.road;
     this.redrawBeams();
