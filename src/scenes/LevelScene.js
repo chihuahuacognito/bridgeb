@@ -111,7 +111,7 @@ export class LevelScene extends Phaser.Scene {
   }
 
   init(data) {
-    this.levelId = data.levelId || 'L1';
+    this.levelId = data.levelId || 'L01';
     this.level = ALL_LEVELS[this.levelId];
     this.beams = [];
     this.pendingJointA = null;

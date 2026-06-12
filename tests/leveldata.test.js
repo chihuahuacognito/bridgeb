@@ -1,17 +1,19 @@
 import { describe, it, expect } from 'vitest';
-import { L1, DEV_STRESS } from '../src/data/leveldata.js';
+import { ALL_LEVELS, DEV_STRESS } from '../src/data/leveldata.js';
+
+const L04 = ALL_LEVELS.L04;
 
 describe('leveldata terrain schema', () => {
-  it('L1 has terrain.left and terrain.right with verts and physRect', () => {
-    expect(L1.terrain.left.verts).toBeInstanceOf(Array);
-    expect(L1.terrain.left.verts.length).toBeGreaterThan(2);
-    expect(L1.terrain.left.physRect).toMatchObject({ x: expect.any(Number), y: expect.any(Number), width: expect.any(Number), height: expect.any(Number) });
-    expect(L1.terrain.right.verts).toBeInstanceOf(Array);
-    expect(L1.terrain.waterY).toBeGreaterThan(0);
+  it('L04 has terrain.left and terrain.right with verts and physRect', () => {
+    expect(L04.terrain.left.verts).toBeInstanceOf(Array);
+    expect(L04.terrain.left.verts.length).toBeGreaterThan(2);
+    expect(L04.terrain.left.physRect).toMatchObject({ x: expect.any(Number), y: expect.any(Number), width: expect.any(Number), height: expect.any(Number) });
+    expect(L04.terrain.right.verts).toBeInstanceOf(Array);
+    expect(L04.terrain.waterY).toBeGreaterThan(0);
   });
 
-  it('L1 has a rocks array (may be empty)', () => {
-    expect(Array.isArray(L1.rocks)).toBe(true);
+  it('L04 has a rocks array (may be empty)', () => {
+    expect(Array.isArray(L04.rocks)).toBe(true);
   });
 
   it('DEV_STRESS rock C1 has id, verts, physRect, color, and anchors', () => {
