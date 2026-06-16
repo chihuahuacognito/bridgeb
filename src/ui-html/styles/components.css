@@ -63,12 +63,16 @@
   box-shadow: 0 0 0 2px var(--blue-dark);
 }
 
-/* Budget chip. */
-.budget-chip { width: 200px; height: 64px; padding: 8px 14px; display: flex; align-items: center; justify-content: space-between; background: var(--panel); border-radius: var(--r-md); box-shadow: 0 3px 0 var(--border), var(--shadow-card); }
+/* Budget chips — one per material (road + wood). */
+.budget-chip { width: 148px; height: 64px; padding: 8px 12px; display: flex; align-items: center; justify-content: space-between; background: var(--panel); border-radius: var(--r-md); box-shadow: 0 3px 0 var(--border), var(--shadow-card); border-top: 3px solid var(--chip-accent, var(--border)); }
 .budget-chip .budget-text { display: flex; flex-direction: column; line-height: 1; }
-.budget-chip .budget-text small { font-size: 9px; color: var(--text-soft); letter-spacing: 0.08em; text-transform: uppercase; }
-.budget-chip .budget-num { font-size: 28px; font-weight: 700; line-height: 1; }
-.budget-chip .coin { width: 30px; height: 30px; flex: 0 0 auto; }
+.budget-chip .budget-text small { font-size: 9px; color: var(--chip-accent, var(--text-soft)); letter-spacing: 0.08em; text-transform: uppercase; opacity: 0.75; }
+.budget-chip .budget-num { font-size: 28px; font-weight: 700; line-height: 1; color: var(--chip-accent, var(--text)); }
+.budget-chip .budget-icon { width: 26px; height: 26px; flex: 0 0 auto; color: var(--chip-accent, var(--text-soft)); opacity: 0.7; }
+.budget-chip--road { --chip-accent: #5a5a72; }
+.budget-chip--wood { --chip-accent: #c47a15; }
+.budget-chip--flash { animation: budget-flash 0.35s ease; }
+@keyframes budget-flash { 0%,100% { transform: scale(1); } 40% { transform: scale(1.06); box-shadow: 0 0 0 3px var(--chip-accent), var(--shadow-card); } }
 
 /* Vehicle card row. */
 .vehicle-row { display: flex; align-items: center; gap: 8px; padding: 8px 10px; cursor: pointer; border-radius: var(--r-md); }
@@ -94,10 +98,10 @@
 .hud-row .num { margin-left: auto; }
 
 /* Region containers. */
-#ui-topbar  { left: 12px; right: 12px; top: 12px; height: 64px; display: flex; align-items: center; gap: 8px; }
-#ui-sidebar { left: 12px; top: 90px; width: 170px; display: flex; flex-direction: column; gap: 8px; }
+#ui-topbar  { left: 12px; right: 12px; top: 12px; height: 64px; display: flex; align-items: center; gap: 8px; z-index: 20; }
+#ui-sidebar { left: 12px; top: 90px; width: 170px; display: flex; flex-direction: column; gap: 8px; z-index: 20; }
 #ui-hud     { left: 12px; bottom: 118px; width: 260px; }
-#ui-toolbar { left: 12px; right: 12px; bottom: 12px; height: 88px; padding: 10px 12px; display: flex; align-items: center; gap: 6px; background: var(--panel); border-radius: var(--r-lg); box-shadow: var(--shadow-card); }
+#ui-toolbar { left: 12px; right: 12px; bottom: 12px; height: 88px; padding: 10px 12px; display: flex; align-items: center; gap: 6px; background: var(--panel); border-radius: var(--r-lg); box-shadow: var(--shadow-card); z-index: 20; }
 #ui-toolbar .divider { width: 1px; height: 48px; background: var(--border); margin: 0 6px; flex: 0 0 auto; }
 #ui-toolbar .play-small { margin-left: auto; }
 

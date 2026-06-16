@@ -23,9 +23,16 @@ body {
 #game canvas { display: block; width: 100%; height: 100%; }
 
 #ui-root { pointer-events: none; }
-#ui-topbar, #ui-sidebar, #ui-hud, #ui-toolbar, #ui-size-row, #ui-modals {
+#ui-topbar, #ui-sidebar, #ui-hud, #ui-toolbar, #ui-size-row {
   position: absolute;
   pointer-events: auto;
+}
+/* Modals layer fills the viewport but passes clicks when empty.
+   Individual modals inside opt in to pointer-events: auto. */
+#ui-modals {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
 }
 
 #ui-root.mode-test  #ui-sidebar { display: none; }

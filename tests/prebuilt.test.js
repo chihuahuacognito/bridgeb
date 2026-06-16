@@ -4,7 +4,7 @@ import { ALL_LEVELS } from '../src/data/leveldata.js';
 
 describe('expandPrebuilt', () => {
   it('returns empty result for a level without prebuilt', () => {
-    expect(expandPrebuilt(ALL_LEVELS.L01)).toEqual({ joints: [], beams: [], cost: 0 });
+    expect(expandPrebuilt(ALL_LEVELS.L01)).toEqual({ joints: [], beams: [], cost: { road: 0, wood: 0 } });
   });
 
   it('expands L03 joints with isAnchor=false and bodyId=id', () => {
@@ -26,6 +26,7 @@ describe('expandPrebuilt', () => {
     });
     const expected = l.prebuilt.beams
       .reduce((s, b) => s + l.materials.road.blocks[b.size].cost, 0);
-    expect(cost).toBe(expected);
+    expect(cost.road).toBe(expected);
+    expect(cost.wood).toBe(0);
   });
 });

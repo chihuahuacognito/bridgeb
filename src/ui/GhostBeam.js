@@ -66,7 +66,7 @@ export class GhostBeam {
     // This is how diagonal bracing connects two existing joints: hover near the
     // destination joint to lock the far end onto it.
     let cursorTarget = null;
-    let bestCursorTargetDist = CURSOR_TARGET_RADIUS;
+    let bestCursorTargetDist = Math.max(CURSOR_TARGET_RADIUS, blockLength * 0.4);
     for (const j of joints) {
       if (j === anchorJoint) continue;
       const d = Math.hypot(j.x - cursorWorld.x, j.y - cursorWorld.y);
@@ -84,29 +84,54 @@ export class GhostBeam {
       farJoint = cursorTarget;
       angleDeg = Math.atan2(farY - anchorJoint.y, farX - anchorJoint.x) * 180 / Math.PI;
     } else {
-      // EXTEND MODE: blockLength + angle-snap + far-end snap
+      // EXTEND MODE: arc snap → constrained angle + far-end snap fallback
       isCursorTargetMode = false;
       const dx = cursorWorld.x - anchorJoint.x;
       const dy = cursorWorld.y - anchorJoint.y;
       const hasDir = Math.hypot(dx, dy) > 4;
       const rawDeg = hasDir ? Math.atan2(dy, dx) * 180 / Math.PI : (this._last?.angleDeg ?? 0);
-      angleDeg = snapAngle(rawDeg);
-      const angleRad = angleDeg * Math.PI / 180;
+      const cursorRad = rawDeg * Math.PI / 180;
 
-      farX = anchorJoint.x + Math.cos(angleRad) * blockLength;
-      farY = anchorJoint.y + Math.sin(angleRad) * blockLength;
-
-      // Generous far-end snap: find nearest joint within FAR_SNAP_RADIUS of the
-      // computed endpoint. Larger than SNAP_RADIUS so diagonal targets are reachable.
+      // Arc snap: find a joint within blockLength ±20% and ±30° of cursor direction.
+      // Lets L/XL beams connect two existing joints at any angle without hovering on one.
       farJoint = null;
-      const FAR_SNAP_RADIUS = Math.max(snapRadius * 4, 80);
-      let bestFarDist = FAR_SNAP_RADIUS;
-      for (const j of joints) {
-        if (j === anchorJoint) continue;
-        const d = Math.hypot(j.x - farX, j.y - farY);
-        if (d < bestFarDist) { bestFarDist = d; farJoint = j; }
+      if (hasDir) {
+        const ARC_ANGLE_TOL = Math.PI / 6;
+        let bestArcScore = Infinity;
+        for (const j of joints) {
+          if (j === anchorJoint) continue;
+          const jdx = j.x - anchorJoint.x;
+          const jdy = j.y - anchorJoint.y;
+          const jDist = Math.hypot(jdx, jdy);
+          if (jDist < blockLength * 0.8 || jDist > blockLength * 1.2) continue;
+          const jRad = Math.atan2(jdy, jdx);
+          const angleDiff = Math.abs(((jRad - cursorRad + Math.PI * 3) % (Math.PI * 2)) - Math.PI);
+          if (angleDiff > ARC_ANGLE_TOL) continue;
+          const score = angleDiff * 2 + Math.abs(jDist - blockLength) / blockLength;
+          if (score < bestArcScore) { bestArcScore = score; farJoint = j; }
+        }
       }
-      if (farJoint) { farX = farJoint.x; farY = farJoint.y; }
+
+      if (farJoint) {
+        farX = farJoint.x;
+        farY = farJoint.y;
+        angleDeg = Math.atan2(farY - anchorJoint.y, farX - anchorJoint.x) * 180 / Math.PI;
+      } else {
+        // No arc snap target — fall back to constrained angle + far-end snap
+        angleDeg = snapAngle(rawDeg);
+        const angleRad = angleDeg * Math.PI / 180;
+        farX = anchorJoint.x + Math.cos(angleRad) * blockLength;
+        farY = anchorJoint.y + Math.sin(angleRad) * blockLength;
+
+        const FAR_SNAP_RADIUS = Math.max(snapRadius * 4, blockLength * 0.5);
+        let bestFarDist = FAR_SNAP_RADIUS;
+        for (const j of joints) {
+          if (j === anchorJoint) continue;
+          const d = Math.hypot(j.x - farX, j.y - farY);
+          if (d < bestFarDist) { bestFarDist = d; farJoint = j; }
+        }
+        if (farJoint) { farX = farJoint.x; farY = farJoint.y; }
+      }
     }
 
     this._last = {

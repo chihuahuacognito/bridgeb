@@ -203,7 +203,9 @@ export class LevelScene extends Phaser.Scene {
 
     this.mode = 'build';                 // 'build' | 'test'
     this.material = this.level.materials.road; // default: road placement
-    this._budgetRemaining = this._freshBudget();
+    const _fresh0 = this._freshBudget();
+    this._budgetRoad = _fresh0.road;
+    this._budgetWood = _fresh0.wood;
     this.beamConstraints = [];           // mirrors physics._beamConstraints, for rendering
 
     this._vehiclePreset = this.level.vehicles[0]?.type ?? VEHICLE_PRESETS[0].key;
@@ -278,7 +280,7 @@ export class LevelScene extends Phaser.Scene {
     // Initial sync — listeners are now wired in mountUi() (runs before Phaser).
     bus.emit('ui:screen', 'level');
     bus.emit('ui:config', this._ui);
-    bus.emit('budget:update', this._budgetRemaining);
+    this._updateBudgetDisplay();
     bus.emit('vehicle:active', this._vehiclePreset);
     bus.emit('mode:changed', 'build');
     bus.emit('tool:select', 'road');
@@ -513,8 +515,9 @@ export class LevelScene extends Phaser.Scene {
       }
     } else {
       const cost = this.material.cost;
-      if (this._budgetRemaining < cost) {
-        this._flashBudget();
+      const freeformPool = this.material.type === 'road' ? '_budgetRoad' : '_budgetWood';
+      if (this[freeformPool] < cost) {
+        this._flashBudget(this.material.type);
         this.pendingJointA = null;
         return;
       }
@@ -539,7 +542,7 @@ export class LevelScene extends Phaser.Scene {
         this._updateUndoBtn();
       }
       this._freeformPendingNewJoint = null;
-      this._budgetRemaining -= cost;
+      this[freeformPool] -= cost;
       this._updateBudgetDisplay();
       this.pendingJointA = null;
       this.redrawBeams();
@@ -549,11 +552,12 @@ export class LevelScene extends Phaser.Scene {
 
   _handleBlockPlace() {
     const placement = this._ghost.getPlacement();
-    if (!placement) { this._flashBudget(); return; }
+    if (!placement) { this._flashBudget(this._blockState.material?.type); return; }
 
     const mat = this._blockState.material;
     const cost = mat.blocks[this._blockState.size].cost;
-    if (this._budgetRemaining < cost) { this._flashBudget(); return; }
+    const blockPool = mat.type === 'road' ? '_budgetRoad' : '_budgetWood';
+    if (this[blockPool] < cost) { this._flashBudget(mat.type); return; }
 
     const { anchorJoint, farEnd, farJoint } = placement;
     const jointsBefore = this.joints.length;
@@ -571,7 +575,7 @@ export class LevelScene extends Phaser.Scene {
     this.beams.push(beam);
     this._undoStack.push({ beam, newJoints, cost });
     this._updateUndoBtn();
-    this._budgetRemaining -= cost;
+    this[blockPool] -= cost;
     this._updateBudgetDisplay();
     this.redrawBeams();
     this.redrawJoints(new Map());
@@ -637,7 +641,8 @@ export class LevelScene extends Phaser.Scene {
       if (ji !== -1) this.joints.splice(ji, 1);
     }
 
-    this._budgetRemaining += cost;
+    const undoPool = beam.material.type === 'road' ? '_budgetRoad' : '_budgetWood';
+    this[undoPool] += cost;
     this._updateBudgetDisplay();
     this._updateUndoBtn();
     this.redrawBeams();
@@ -654,7 +659,10 @@ export class LevelScene extends Phaser.Scene {
   }
 
   _updateBudgetDisplay() {
-    bus.emit('budget:update', this._budgetRemaining);
+    bus.emit('budget:update', {
+      road: this._budgetRoad,
+      wood: this.level.budget.wood != null ? this._budgetWood : null,
+    });
   }
 
   _updateDebugHud() {
@@ -674,8 +682,8 @@ export class LevelScene extends Phaser.Scene {
     });
   }
 
-  _flashBudget() {
-    // HTML budget chip handles its own emphasis; intentionally empty.
+  _flashBudget(materialType) {
+    bus.emit('budget:flash', materialType);
   }
 
   _selectVehicle(key) {
@@ -717,6 +725,7 @@ export class LevelScene extends Phaser.Scene {
     this.snapTarget = null;
     // Clear all graphics layers.
     this.vehicleGraphics?.clear();
+    this._vehicleSprite?.setVisible(false);
     this.stressGraphics.clear();
     this.ghostGraphics.clear();
     this.snapGraphics.clear();
@@ -734,7 +743,9 @@ export class LevelScene extends Phaser.Scene {
     this.material = this.level.materials.road;
     this.redrawBeams();
     this.redrawJoints(new Map());
-    this._budgetRemaining = this._freshBudget();
+    const _freshR = this._freshBudget();
+    this._budgetRoad = _freshR.road;
+    this._budgetWood = _freshR.wood;
     this._updateBudgetDisplay();
   }
 
@@ -1200,16 +1211,20 @@ export class LevelScene extends Phaser.Scene {
       this._hoverTarget = null;
       bus.emit('mode:changed', 'test');
     } else {
+      // Set mode and clear the auto-return timer FIRST so the update loop
+      // cannot re-enter this branch if anything below throws.
+      this.mode = 'build';
+      this.testEndAt = 0;
       juice.reset();
       this.rebuildBridge();
       cam.follow(null);
       this.cameras.main.setZoom(1.0);
       this.cameras.main.scrollX = 0;
       this.cameras.main.scrollY = 0;
-      this.mode = 'build';
       physics.setRunnerEnabled(false);
       this._setBlueprintMode();
       this.vehicleGraphics?.clear();
+      this._vehicleSprite?.setVisible(false);
       this.stressGraphics.clear();
       this._jointStrain = null;
       this._firstBreakPos = null;
@@ -1219,8 +1234,9 @@ export class LevelScene extends Phaser.Scene {
       this.redrawJoints(new Map());
       this.winOverlay?.destroy(); this.winOverlay = null;
       this.failOverlay?.destroy(); this.failOverlay = null;
-      this.testEndAt = 0;
-      this._budgetRemaining = this._freshBudget();
+      const _freshB = this._freshBudget();
+      this._budgetRoad = _freshB.road;
+      this._budgetWood = _freshB.wood;
       this._updateBudgetDisplay();
       bus.emit('mode:changed', 'build');
     }
@@ -1334,7 +1350,11 @@ export class LevelScene extends Phaser.Scene {
 
   // Budget always starts net of the prebuilt bridge cost (spec).
   _freshBudget() {
-    return this.level.budget - this._prebuiltCost;
+    const b = this.level.budget;
+    return {
+      road: (b.road ?? 0) - (this._prebuiltCost.road ?? 0),
+      wood: (b.wood ?? 0) - (this._prebuiltCost.wood ?? 0),
+    };
   }
 
   update(_time, delta) {
@@ -1414,7 +1434,8 @@ export class LevelScene extends Phaser.Scene {
     }
 
     if (cost > 0) {
-      this._budgetRemaining += cost;
+      const removePool = beam.material.type === 'road' ? '_budgetRoad' : '_budgetWood';
+      this[removePool] += cost;
       this._updateBudgetDisplay();
     }
 
@@ -1477,7 +1498,7 @@ export class LevelScene extends Phaser.Scene {
     bus.emit('level:result', {
       won: true,
       text: this.level.tutorial?.success?.text ?? '',
-      budgetLeft: this._budgetRemaining,
+      budgetLeft: this._budgetRoad + this._budgetWood,
       hasNext: i >= 0 && i < LEVEL_ORDER.length - 1,
     });
     this.winOverlay = { destroy: () => bus.emit('level:result-hide') };

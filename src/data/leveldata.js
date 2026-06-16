@@ -87,7 +87,7 @@ function level(def) {
 
 export const L01 = level({
   id: 'L01', title: 'Make It Reach', phase: 'tutorial',
-  span: 1.6, budget: 8,
+  span: 1.6, budget: { road: 8 },
   terrain: terrainPair(560, 720),
   anchors: spanAnchors(560, 720),
   vehicles: [{ type: 'car', spawnAt: 'left' }],
@@ -104,7 +104,7 @@ export const L01 = level({
 // Until that lands, the field is data-only and has no runtime effect.
 export const L02 = level({
   id: 'L02', title: 'Try Again!', phase: 'tutorial',
-  span: 3.2, budget: 40,
+  span: 3.2, budget: { road: 40 },
   terrain: terrainPair(480, 800),
   anchors: spanAnchors(480, 800),
   // Heavier-than-car design weight so a flat 2–3 segment deck is guaranteed to snap.
@@ -120,7 +120,7 @@ export const L02 = level({
 
 export const L03 = level({
   id: 'L03', title: "Builder's Tools", phase: 'tutorial',
-  span: 3.2, budget: 60,
+  span: 3.2, budget: { road: 36, wood: 24 },
   terrain: terrainPair(480, 800),
   anchors: spanAnchors(480, 800),
   vehicles: [{ type: 'car', spawnAt: 'left' }],
@@ -148,7 +148,7 @@ export const L03 = level({
 
 export const L04 = level({
   id: 'L04', title: 'Gravity Pulls Down', phase: 'topic',
-  span: 4.4, budget: 36,
+  span: 4.4, budget: { road: 22, wood: 14 },
   terrain: terrainPair(420, 860),
   anchors: spanAnchors(420, 860),
   rocks: [pillar('P1', 640, 530)],
@@ -164,7 +164,7 @@ export const L04 = level({
 
 export const L05 = level({
   id: 'L05', title: 'Heavier Is Harder', phase: 'topic',
-  span: 4.4, budget: 26,
+  span: 4.4, budget: { road: 16, wood: 10 },
   terrain: terrainPair(420, 860),
   anchors: spanAnchors(420, 860),
   rocks: [pillar('P1', 640, 530)],
@@ -180,7 +180,7 @@ export const L05 = level({
 
 export const L06 = level({
   id: 'L06', title: 'The Strongest Shape', phase: 'topic',
-  span: 4.8, budget: 38,
+  span: 4.8, budget: { road: 23, wood: 15 },
   terrain: terrainPair(400, 880),
   anchors: spanAnchors(400, 880),
   vehicles: [{ type: 'car', spawnAt: 'left' }],
@@ -207,7 +207,7 @@ export const L06 = level({
 
 export const L07 = level({
   id: 'L07', title: 'Triangles Everywhere', phase: 'topic',
-  span: 5.6, budget: 60,
+  span: 5.6, budget: { road: 36, wood: 24 },
   terrain: terrainPair(360, 920),
   anchors: spanAnchors(360, 920),
   rocks: [pillar('P1', 640, 530)],
@@ -222,7 +222,7 @@ export const L07 = level({
 
 export const L08 = level({
   id: 'L08', title: 'Balance the Load', phase: 'topic',
-  span: 4.0, budget: 55,
+  span: 4.0, budget: { road: 33, wood: 22 },
   terrain: terrainPair(440, 840, 400, 320),
   anchors: spanAnchors(440, 840, 400, 320),
   rocks: [pillar('P1', 720, 560)],
@@ -238,7 +238,7 @@ export const L08 = level({
 
 export const L09 = level({
   id: 'L09', title: 'Count Your Coins', phase: 'topic',
-  span: 4.0, budget: 22,
+  span: 4.0, budget: { road: 13, wood: 9 },
   terrain: terrainPair(440, 840),
   anchors: spanAnchors(440, 840),
   vehicles: [{ type: 'car', spawnAt: 'left' }],
@@ -254,7 +254,7 @@ export const L09 = level({
 
 export const L10 = level({
   id: 'L10', title: 'The Long Crossing', phase: 'challenge',
-  span: 7.6, budget: 80,
+  span: 7.6, budget: { road: 48, wood: 32 },
   terrain: terrainPair(260, 1020),
   anchors: spanAnchors(260, 1020),
   rocks: [pillar('P1', 640, 530)],
@@ -268,7 +268,7 @@ export const L10 = level({
 
 export const L11 = level({
   id: 'L11', title: 'Heavy Hauler', phase: 'challenge',
-  span: 4.8, budget: 60,
+  span: 4.8, budget: { road: 36, wood: 24 },
   terrain: terrainPair(400, 880),
   anchors: spanAnchors(400, 880),
   vehicles: [{ type: 'tank', spawnAt: 'left', design: { weight: 8, speed: 2, acceleration: 5 } }],
@@ -282,7 +282,7 @@ export const L11 = level({
 
 export const L12 = level({
   id: 'L12', title: 'Master Builder', phase: 'challenge',
-  span: 8.0, budget: 90,
+  span: 8.0, budget: { road: 54, wood: 36 },
   terrain: terrainPair(240, 1040, 380, 300),
   anchors: spanAnchors(240, 1040, 380, 300),
   rocks: [pillar('P1', 520, 560), pillar('P2', 800, 480)],
@@ -301,7 +301,7 @@ export const DEV_STRESS = {
   id: 'DEV_STRESS',
   title: 'Dev — Stress Test',
   span: 6,
-  budget: 400,
+  budget: { road: 240, wood: 160 },
   worldWidth: 1280,
   worldHeight: 720,
   terrain: {

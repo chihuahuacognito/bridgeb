@@ -48,11 +48,16 @@ export class MenuScene extends Phaser.Scene {
       card.on('pointerout',  () => card.setAlpha(1));
     });
 
-    // Dev back door: ?dev in the URL exposes the stress level.
-    if (typeof window !== 'undefined' && window.location.search.includes('dev')) {
-      const devBtn = this.add.rectangle(640, 660, 300, 44, 0x7b1fa2).setInteractive();
-      this.add.text(640, 660, 'DEV — STRESS TEST', { fontSize: '16px', color: '#fff' }).setOrigin(0.5);
-      devBtn.on('pointerdown', () => this.scene.start('LevelScene', { levelId: 'DEV_STRESS' }));
-    }
+    // Dev stress test — always visible below the level grid.
+    const rows = Math.ceil(entries.length / COLS);
+    const gridBottom = 220 + (rows - 1) * (CH + GY) + CH / 2;
+    const devY = gridBottom + 50;
+    const devBtn = this.add.rectangle(640, devY, 300, 44, 0x6a1b9a)
+      .setStrokeStyle(2, 0xce93d8, 0.5)
+      .setInteractive({ useHandCursor: true });
+    this.add.text(640, devY, 'Dev — Stress Test', { fontSize: '16px', color: '#e1bee7' }).setOrigin(0.5);
+    devBtn.on('pointerdown', () => this.scene.start('LevelScene', { levelId: 'DEV_STRESS' }));
+    devBtn.on('pointerover', () => devBtn.setAlpha(0.8));
+    devBtn.on('pointerout',  () => devBtn.setAlpha(1));
   }
 }

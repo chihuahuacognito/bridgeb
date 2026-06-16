@@ -42,9 +42,10 @@ describe('mountUi integration', () => {
     expect(document.querySelector('#ui-root').classList.contains('mode-build')).toBe(true);
   });
 
-  it('budget:update propagates from scene to chip', () => {
-    bus.emit('budget:update', 400);
-    expect(document.querySelector('.budget-num').textContent).toBe('400');
+  it('budget:update propagates from scene to road chip', () => {
+    bus.emit('budget:update', { road: 400, wood: null });
+    const chips = document.querySelectorAll('.budget-chip--road .budget-num');
+    expect(chips[0].textContent).toBe('400');
   });
 
   it('hud:update propagates to HUD', () => {
