@@ -13,7 +13,8 @@ export function mountTopBar(root) {
     onClick: () => bus.emit('undo'),
   }));
   root.appendChild(IconButton({
-    icon: I.redo(), label: 'REDO', disabled: true,
+    icon: I.home(), label: 'HOME',
+    onClick: () => bus.emit('level:menu'),
   }));
   root.appendChild(IconButton({
     icon: I.clear(), label: 'CLEAR', accent: 'red',

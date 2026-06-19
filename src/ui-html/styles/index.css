@@ -11,7 +11,7 @@
 
 /* ── Tutorial card ─────────────────────────────────────────────────────── */
 .tutorial-card {
-  position: absolute; left: 50%; bottom: 120px; transform: translateX(-50%);
+  position: absolute; left: 50%; top: 96px; transform: translateX(-50%);
   background: #16243d; border: 2px solid #f5d400; border-radius: 16px;
   padding: 18px 28px; color: #fff; text-align: center;
   pointer-events: auto; cursor: pointer; max-width: 480px;

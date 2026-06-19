@@ -1,5 +1,11 @@
 # Bridge Builder — Claude Code Guide
 
+> **Before changing code, read [`docs/AI_CODING_GUIDE.md`](docs/AI_CODING_GUIDE.md).**
+> It captures the mistakes models keep repeating here — diagnose by running the
+> app (not guessing), road vs. wood are different materials, tutorial text must
+> match level config, and guard scene teardown. This file is *how the system is
+> built*; that file is *how to work on it without breaking it*.
+
 ## Project
 
 Poly Bridge-style 2D physics bridge builder. Run with `npm run dev`. Tests: `npm test`.

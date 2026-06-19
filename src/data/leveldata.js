@@ -87,7 +87,7 @@ function level(def) {
 
 export const L01 = level({
   id: 'L01', title: 'Make It Reach', phase: 'tutorial',
-  span: 1.6, budget: { road: 8 },
+  span: 1.6, budget: { road: 8 }, stressGlow: false,
   terrain: terrainPair(560, 720),
   anchors: spanAnchors(560, 720),
   vehicles: [{ type: 'car', spawnAt: 'left' }],
@@ -104,23 +104,24 @@ export const L01 = level({
 // Until that lands, the field is data-only and has no runtime effect.
 export const L02 = level({
   id: 'L02', title: 'Try Again!', phase: 'tutorial',
-  span: 3.2, budget: { road: 40 },
+  span: 3.2, budget: { road: 40, wood: 16 }, stressGlow: false,
   terrain: terrainPair(480, 800),
   anchors: spanAnchors(480, 800),
+  rocks: [pillar('P1', 640, 480)],
   // Heavier-than-car design weight so a flat 2–3 segment deck is guaranteed to snap.
   vehicles: [{ type: 'car', spawnAt: 'left', design: { weight: 6, speed: 7, acceleration: 5 } }],
-  materials: { road: roadMat(['M', 'L']) },
-  ui: { budgetMeter: false, delete: false, vehicleSelect: false, tools: ['road'] },
+  materials: { road: roadMat(['M', 'L']), wood: woodMat(['M', 'L']) },
+  ui: { budgetMeter: false, delete: false, vehicleSelect: false, tools: ['road', 'beam'] },
   tutorial: {
     intro:   { icon: '🌉', text: 'Build across — then press TEST.' },
-    hint:    { icon: '💪', text: 'It broke! Add more beams and try again.' },
+    hint:    { icon: '💪', text: 'It broke! Use the rock below — attach wood beams from it up to your deck.' },
     success: { text: 'Falling down is how we learn!' },
   },
 });
 
 export const L03 = level({
   id: 'L03', title: "Builder's Tools", phase: 'tutorial',
-  span: 3.2, budget: { road: 36, wood: 24 },
+  span: 3.2, budget: { road: 36, wood: 24 }, stressGlow: false,
   terrain: terrainPair(480, 800),
   anchors: spanAnchors(480, 800),
   vehicles: [{ type: 'car', spawnAt: 'left' }],
@@ -162,18 +163,37 @@ export const L04 = level({
   },
 });
 
+// Mirrors L06's prebuilt-deck pattern. The road deck is pre-laid with only ONE
+// weak wood support (the right half is unbraced), so under the heavy truck it
+// sags and snaps on TEST. The player adds more wood beams down to the pillar to
+// make it strong enough. (L06 teaches the triangle SHAPE; L05 is about adding
+// enough support for a heavy load.) Build mode is paused, so the player
+// reinforces before testing. road budget == prebuilt road cost (8+4+8 = 20) so
+// the player only spends wood; tools restricted to wood for focus.
 export const L05 = level({
   id: 'L05', title: 'Heavier Is Harder', phase: 'topic',
-  span: 4.4, budget: { road: 16, wood: 10 },
+  span: 4.4, budget: { road: 20, wood: 12 },
   terrain: terrainPair(420, 860),
   anchors: spanAnchors(420, 860),
   rocks: [pillar('P1', 640, 530)],
   vehicles: [{ type: 'truck', spawnAt: 'left', design: { weight: 6, speed: 4, acceleration: 5 } }],
   materials: { road: roadMat(), wood: woodMat() },
-  ui: { vehicleSelect: false },
+  ui: { vehicleSelect: false, tools: ['beam'] },
+  prebuilt: {
+    joints: [
+      { id: 'd1', x: 600, y: 360 },
+      { id: 'd2', x: 680, y: 360 },
+    ],
+    beams: [
+      { a: 'L',  b: 'd1', material: 'road', size: 'L' },
+      { a: 'd1', b: 'd2', material: 'road', size: 'M' },
+      { a: 'd2', b: 'R',  material: 'road', size: 'L' },
+      { a: 'd1', b: 'P1_L', material: 'wood', size: 'L' }, // weak: only left side braced
+    ],
+  },
   tutorial: {
-    intro:   { icon: '🚚', text: 'The truck weighs more than the car. What needs to change?' },
-    hint:    { icon: '🪨', text: 'The rock in the middle can hold your bridge up.' },
+    intro:   { icon: '🚚', text: 'This bridge is too weak for the heavy truck. Make it stronger!' },
+    hint:    { icon: '🪨', text: 'The right side has no support — add wood beams from the road down to the rock.' },
     success: { text: 'Heavy load, strong bridge!' },
   },
 });
@@ -183,6 +203,7 @@ export const L06 = level({
   span: 4.8, budget: { road: 23, wood: 15 },
   terrain: terrainPair(400, 880),
   anchors: spanAnchors(400, 880),
+  rocks: [pillar('P1', 640, 490)],
   vehicles: [{ type: 'car', spawnAt: 'left' }],
   // Anti-bypass: only L-size road (no cheap re-segmenting), wood for diagonals.
   materials: { road: roadMat(['L']), wood: woodMat(['S', 'M', 'L']) },
@@ -213,6 +234,7 @@ export const L07 = level({
   rocks: [pillar('P1', 640, 530)],
   vehicles: [{ type: 'car', spawnAt: 'left' }],
   materials: { road: roadMat(), wood: woodMat() },
+  ui: { vehicleSelect: false },
   tutorial: {
     intro:   { icon: '🔺', text: 'Build a whole bridge of triangles!' },
     hint:    { icon: '🔺', text: 'Zig-zag wood beams between the road make triangles.' },
@@ -243,6 +265,7 @@ export const L09 = level({
   anchors: spanAnchors(440, 840),
   vehicles: [{ type: 'car', spawnAt: 'left' }],
   materials: { road: roadMat(), wood: woodMat() },
+  ui: { vehicleSelect: false },
   tutorial: {
     intro:   { icon: '🪙', text: 'Coins are tight! Wood is cheap, road is strong.' },
     hint:    { icon: '🪙', text: 'Big blocks cost more. Where is a small one enough?' },
@@ -260,6 +283,7 @@ export const L10 = level({
   rocks: [pillar('P1', 640, 530)],
   vehicles: [{ type: 'truck', spawnAt: 'left' }],
   materials: { road: roadMat(), wood: woodMat() },
+  ui: { vehicleSelect: false },
   tutorial: {
     hint:    { icon: '🔺', text: 'Triangles plus the rock pillar — use everything you know.' },
     success: { text: 'The longest crossing yet!' },
@@ -352,8 +376,11 @@ export const DEV_STRESS = {
     { id: 'L', x: 280,  y: 360, side: 'left' },
     { id: 'R', x: 1000, y: 360, side: 'right' },
   ],
+  // Sandbox: starts as a normal car and stays vehicle-selectable. Tune weight/
+  // speed/acceleration live via the cheat panel (sliders feed toggleTest). The
+  // old { weight: 2000, speed: 'normal' } raw fields were dead data, removed.
   vehicles: [
-    { type: 'car', spawnAt: 'left', weight: 2000, speed: 'normal' },
+    { type: 'car', spawnAt: 'left' },
   ],
   gravity: { y: 1.5, label: 'Normal' },
   materials: {

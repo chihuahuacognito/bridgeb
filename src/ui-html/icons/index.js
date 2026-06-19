@@ -77,6 +77,12 @@ export const redo = () => svg(`
   <path d="M19 10 L13 4 V8 H8 a4 4 0 0 0 0 8 H14" stroke="currentColor" stroke-width="2.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
 `);
 
+export const home = () => svg(`
+  <path d="M4 11 L12 4 L20 11" stroke="currentColor" stroke-width="2.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M6 10 V20 H18 V10" stroke="currentColor" stroke-width="2.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+  <rect x="10" y="14" width="4" height="6"/>
+`);
+
 export const clear = () => svg(`
   <rect x="6" y="3" width="12" height="3" rx="1"/>
   <path d="M5 7 L7 21 H17 L19 7 Z" stroke="currentColor" stroke-width="2" fill="none" stroke-linejoin="round"/>

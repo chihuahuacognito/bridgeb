@@ -18,7 +18,7 @@ const cam = {
   },
 
   reset() {
-    if (this._scene) {
+    if (this._scene?.cameras?.main) {
       this._scene.cameras.main.setZoom(1);
       this._scene.cameras.main.stopFollow();
     }

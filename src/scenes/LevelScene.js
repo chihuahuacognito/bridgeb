@@ -139,12 +139,18 @@ export class LevelScene extends Phaser.Scene {
   create() {
     this.drawSky();
     this.drawClouds();
-    this._blueprintGrid = this.drawBlueprintGrid();
-    this._testGrid      = this.drawTestGrid();
+    // this._blueprintGrid = this.drawBlueprintGrid();
+    // this._testGrid      = this.drawTestGrid();
     this._setBlueprintMode();            // start in build mode
     this.drawTerrain();
     this.drawRocks();
     this.drawWater();
+    // Checkpoint sits midway across the right landmass — the car must drive
+    // onto the far cliff to clear, not merely touch its near edge.
+    const _rightA = this.level.anchors.find(a => a.side === 'right');
+    this._checkpointX = _rightA.x + (this.level.worldWidth - _rightA.x) * 0.5;
+    this.drawRoads();
+    this.drawCheckpoint();
 
     this.beamsGraphics   = this.add.graphics(); // back: beam bases
     this.stressGraphics  = this.add.graphics(); // mid: stress overlay (test mode only)
@@ -209,11 +215,13 @@ export class LevelScene extends Phaser.Scene {
     this.beamConstraints = [];           // mirrors physics._beamConstraints, for rendering
 
     this._vehiclePreset = this.level.vehicles[0]?.type ?? VEHICLE_PRESETS[0].key;
-    const _vp0 = VEHICLE_PRESETS[0];
+    // Seed the cheat sliders from the level's actually-resolved vehicle so the
+    // panel reflects (and, via toggleTest, controls) the real spawned vehicle.
+    const _design0 = resolveVehicleDesign(this.level, VEHICLE_PRESETS, this._vehiclePreset);
     this._cheatParams = {
-      weight:              _vp0.weight,
-      speed:               _vp0.speed,
-      acceleration:        _vp0.acceleration,
+      weight:              _design0.weight,
+      speed:               _design0.speed,
+      acceleration:        _design0.acceleration,
       roadStiffness:       this.level.materials.road.stiffness,
       roadSnapThreshold:   this.level.materials.road.snapThreshold,
       beamStiffness:       this.level.materials.wood?.stiffness ?? 0.15,
@@ -355,50 +363,48 @@ export class LevelScene extends Phaser.Scene {
     }
   }
 
-  drawBlueprintGrid() {
-    const g = this.add.graphics();
-    const { worldWidth: w, worldHeight: h } = this.level;
-    // Minor grid — every 40px
-    g.lineStyle(1, VIZ.BLUEPRINT_MINOR, VIZ.BLUEPRINT_MINOR_ALPHA);
-    for (let x = 0; x <= w; x += VIZ.GRID_STEP) {
-      g.beginPath(); g.moveTo(x, 0); g.lineTo(x, h); g.strokePath();
-    }
-    for (let y = 0; y <= h; y += VIZ.GRID_STEP) {
-      g.beginPath(); g.moveTo(0, y); g.lineTo(w, y); g.strokePath();
-    }
-    // Major grid — every 160px (L-block interval), drawn on top at higher alpha
-    g.lineStyle(1, VIZ.BLUEPRINT_MAJOR, VIZ.BLUEPRINT_MAJOR_ALPHA);
-    for (let x = 0; x <= w; x += VIZ.BLUEPRINT_MAJOR_STEP) {
-      g.beginPath(); g.moveTo(x, 0); g.lineTo(x, h); g.strokePath();
-    }
-    for (let y = 0; y <= h; y += VIZ.BLUEPRINT_MAJOR_STEP) {
-      g.beginPath(); g.moveTo(0, y); g.lineTo(w, y); g.strokePath();
-    }
-    return g;
-  }
+  // drawBlueprintGrid() {
+  //   const g = this.add.graphics();
+  //   const { worldWidth: w, worldHeight: h } = this.level;
+  //   g.lineStyle(1, VIZ.BLUEPRINT_MINOR, VIZ.BLUEPRINT_MINOR_ALPHA);
+  //   for (let x = 0; x <= w; x += VIZ.GRID_STEP) {
+  //     g.beginPath(); g.moveTo(x, 0); g.lineTo(x, h); g.strokePath();
+  //   }
+  //   for (let y = 0; y <= h; y += VIZ.GRID_STEP) {
+  //     g.beginPath(); g.moveTo(0, y); g.lineTo(w, y); g.strokePath();
+  //   }
+  //   g.lineStyle(1, VIZ.BLUEPRINT_MAJOR, VIZ.BLUEPRINT_MAJOR_ALPHA);
+  //   for (let x = 0; x <= w; x += VIZ.BLUEPRINT_MAJOR_STEP) {
+  //     g.beginPath(); g.moveTo(x, 0); g.lineTo(x, h); g.strokePath();
+  //   }
+  //   for (let y = 0; y <= h; y += VIZ.BLUEPRINT_MAJOR_STEP) {
+  //     g.beginPath(); g.moveTo(0, y); g.lineTo(w, y); g.strokePath();
+  //   }
+  //   return g;
+  // }
 
-  drawTestGrid() {
-    const g = this.add.graphics().setVisible(false);
-    g.lineStyle(1, VIZ.GRID_COLOR, VIZ.GRID_ALPHA);
-    for (let x = 0; x <= this.level.worldWidth; x += VIZ.GRID_STEP) {
-      g.beginPath(); g.moveTo(x, 0); g.lineTo(x, this.level.worldHeight); g.strokePath();
-    }
-    for (let y = 0; y <= this.level.worldHeight; y += VIZ.GRID_STEP) {
-      g.beginPath(); g.moveTo(0, y); g.lineTo(this.level.worldWidth, y); g.strokePath();
-    }
-    return g;
-  }
+  // drawTestGrid() {
+  //   const g = this.add.graphics().setVisible(false);
+  //   g.lineStyle(1, VIZ.GRID_COLOR, VIZ.GRID_ALPHA);
+  //   for (let x = 0; x <= this.level.worldWidth; x += VIZ.GRID_STEP) {
+  //     g.beginPath(); g.moveTo(x, 0); g.lineTo(x, this.level.worldHeight); g.strokePath();
+  //   }
+  //   for (let y = 0; y <= this.level.worldHeight; y += VIZ.GRID_STEP) {
+  //     g.beginPath(); g.moveTo(0, y); g.lineTo(this.level.worldWidth, y); g.strokePath();
+  //   }
+  //   return g;
+  // }
 
   _setBlueprintMode() {
     this.cameras.main.setBackgroundColor(VIZ.BLUEPRINT_BG);
-    this._blueprintGrid?.setVisible(true);
-    this._testGrid?.setVisible(false);
+    // this._blueprintGrid?.setVisible(true);
+    // this._testGrid?.setVisible(false);
   }
 
   _setTestMode() {
     this.cameras.main.setBackgroundColor(VIZ.TEST_BG);
-    this._blueprintGrid?.setVisible(false);
-    this._testGrid?.setVisible(true);
+    // this._blueprintGrid?.setVisible(false);
+    // this._testGrid?.setVisible(true);
   }
 
   drawTerrain() {
@@ -407,18 +413,29 @@ export class LevelScene extends Phaser.Scene {
     // Extra pixels each cliff extends beyond the world edge so no gap shows
     // between the sprite and the screen edge at any resolution or camera offset.
     const OVERFLOW = 500;
-    for (const [side, key] of [[left, 'cliff-left'], [right, 'cliff-right']]) {
+    // Cliffs whose on-screen landmass is wider than this stretch the directional
+    // cliff art badly, so they use the dedicated rocky_cliff face instead. The
+    // narrow-landmass (wide-gap) levels keep cliff-left/cliff-right.
+    const STRETCHED_CLIFF_MIN_WIDTH = 300;
+    for (const [side, isLeft] of [[left, true], [right, false]]) {
+      const xs = side.verts.map(v => v.x);
+      const ys = side.verts.map(v => v.y);
+      const x0 = Math.min(...xs), y0 = Math.min(...ys);
+      const x1 = Math.max(...xs), y1 = Math.max(...ys);
+      // On-screen landmass width (excludes the off-screen OVERFLOW extension).
+      const landWidth = isLeft ? (x1 - x0) : (W - x0);
+      const useRocky = landWidth >= STRETCHED_CLIFF_MIN_WIDTH
+        && this.textures.exists('rocky_cliff') && assets.has('rocky_cliff');
+      const key = useRocky ? 'rocky_cliff' : (isLeft ? 'cliff-left' : 'cliff-right');
       if (this.textures.exists(key) && assets.has(key)) {
-        const xs = side.verts.map(v => v.x);
-        const ys = side.verts.map(v => v.y);
-        const x0 = Math.min(...xs), y0 = Math.min(...ys);
-        const x1 = Math.max(...xs), y1 = Math.max(...ys);
-        const isLeft = key === 'cliff-left';
         // Left cliff: stretch leftward past x=0. Right cliff: stretch rightward past worldWidth.
         const imgX = isLeft ? x0 - OVERFLOW : x0;
         const imgW = isLeft ? (x1 - x0) + OVERFLOW : (W - x0) + OVERFLOW;
-        this.add.image(imgX, y0, key).setOrigin(0, 0)
+        const img = this.add.image(imgX, y0, key).setOrigin(0, 0)
           .setDisplaySize(imgW, y1 - y0).setDepth(-40);
+        // rocky_cliff is a single image; mirror it on the right so its face
+        // points inward toward the gap (cliff-left/right are already directional).
+        if (useRocky && !isLeft) img.setFlipX(true);
       } else {
         const g = this.add.graphics();
         g.fillStyle(side.color ?? 0x2c3033, 1);
@@ -447,6 +464,72 @@ export class LevelScene extends Phaser.Scene {
         g.strokePoints(rock.verts, true);
       }
     }
+  }
+
+  // Spawn point on the starting landmass: far back on the cliff so the vehicle
+  // drives a couple seconds across solid ground before reaching the bridge.
+  _spawnPoint() {
+    const onLeft = (this.level.vehicles[0]?.spawnAt ?? 'left') === 'left';
+    const side = onLeft ? 'left' : 'right';
+    const anchor = this.level.anchors.find(a => a.side === side);
+    const topY = anchor?.y ?? 360;
+    const x = onLeft ? 60 : this.level.worldWidth - 60;
+    return { x, y: topY - 40 };
+  }
+
+  // Visual road strip along each cliff top so the vehicle reads as driving on a
+  // proper road over the landmass. Purely cosmetic — the terrain body is the
+  // actual collision surface.
+  drawRoads() {
+    const leftA  = this.level.anchors.find(a => a.side === 'left');
+    const rightA = this.level.anchors.find(a => a.side === 'right');
+    const W = this.level.worldWidth;
+    const TH = 12;     // road thickness
+    const EXT = 280;   // extend past screen edges so no gap shows
+    const g = this.add.graphics().setDepth(-38);
+    const band = (x0, x1, topY) => {
+      g.fillStyle(0x3b4047, 1);
+      g.fillRect(x0, topY, x1 - x0, TH);                 // asphalt
+      g.fillStyle(0x4c535b, 1);
+      g.fillRect(x0, topY, x1 - x0, 2);                  // top highlight edge
+      g.fillStyle(0x23262a, 1);
+      g.fillRect(x0, topY + TH - 2, x1 - x0, 2);         // bottom shade edge
+      g.fillStyle(0xf5d54a, 0.85);                       // dashed centre line
+      for (let x = x0 + 8; x < x1 - 8; x += 28) g.fillRect(x, topY + TH / 2 - 1, 15, 2);
+    };
+    band(-EXT, leftA.x, leftA.y);
+    band(rightA.x, W + EXT, rightA.y);
+  }
+
+  // Goal pennant on the right landmass marking the checkpoint the vehicle must
+  // reach. Pole + base are static; the pennant waves with an idle tween.
+  drawCheckpoint() {
+    const rightA = this.level.anchors.find(a => a.side === 'right');
+    const x = this._checkpointX;
+    const topY = rightA.y;
+    const poleH = 58;
+
+    const g = this.add.graphics().setDepth(-19);
+    g.fillStyle(0x000000, 0.18);
+    g.fillEllipse(x, topY + 2, 26, 8);                   // ground shadow
+    g.fillStyle(0x2b2f33, 1);
+    g.fillEllipse(x, topY, 20, 6);                       // base
+    g.fillStyle(0xe8eef2, 1);
+    g.fillRect(x - 2, topY - poleH, 4, poleH);           // pole
+    g.fillStyle(0xf5d54a, 1);
+    g.fillCircle(x, topY - poleH, 4);                    // pole knob
+
+    // Waving pennant drawn in local coords so scaleX pivots at the pole.
+    const pen = this.add.graphics().setDepth(-18);
+    pen.fillStyle(0xe23b3b, 1);
+    pen.fillTriangle(2, 2, 42, 13, 2, 24);
+    pen.fillStyle(0xffffff, 0.85);
+    pen.fillRect(2, 11, 26, 3);                          // accent stripe
+    pen.setPosition(x, topY - poleH);
+    this.tweens.add({
+      targets: pen, scaleX: { from: 1, to: 0.82 },
+      duration: 720, yoyo: true, repeat: -1, ease: 'Sine.inOut',
+    });
   }
 
   drawWater() {
@@ -490,29 +573,15 @@ export class LevelScene extends Phaser.Scene {
 
   _handleFreeformClick(pointer) {
     const raw = { x: pointer.worldX, y: pointer.worldY };
+    // Snap to existing joints so beams connect to anchors and other nodes.
+    // Beam-midpoint split (findBeamSnap) is disabled — no mid-beam insertion.
     const jointSnap = this.findNearestJoint(raw);
-    let p;
-    let beamSnapResult = null;
-
-    if (jointSnap) {
-      p = { x: jointSnap.x, y: jointSnap.y, bodyId: jointSnap.bodyId };
-    } else {
-      beamSnapResult = findBeamSnap(raw, this.beams, this.SNAP_RADIUS);
-      p = beamSnapResult ? { x: beamSnapResult.point.x, y: beamSnapResult.point.y } : raw;
-    }
+    const p = jointSnap ? { x: jointSnap.x, y: jointSnap.y, bodyId: jointSnap.bodyId } : raw;
 
     if (!this.pendingJointA) {
-      if (beamSnapResult) {
-        const newJoint = this.splitBeam(beamSnapResult.beamIndex, beamSnapResult.point);
-        this.pendingJointA = newJoint;
-        this._freeformPendingNewJoint = null; // split-beam — not tracked for undo
-        this.redrawBeams();
-        this.redrawJoints(new Map());
-      } else {
-        const isNew = !p.bodyId;
-        this.pendingJointA = isNew ? this.registerNewJoint(p) : p;
-        this._freeformPendingNewJoint = isNew ? this.pendingJointA : null;
-      }
+      const isNew = !p.bodyId;
+      this.pendingJointA = isNew ? this.registerNewJoint(p) : p;
+      this._freeformPendingNewJoint = isNew ? this.pendingJointA : null;
     } else {
       const cost = this.material.cost;
       const freeformPool = this.material.type === 'road' ? '_budgetRoad' : '_budgetWood';
@@ -521,26 +590,18 @@ export class LevelScene extends Phaser.Scene {
         this.pendingJointA = null;
         return;
       }
-      let endpoint;
-      let endpointIsNew = false;
-      if (beamSnapResult) {
-        endpoint = this.splitBeam(beamSnapResult.beamIndex, beamSnapResult.point);
-      } else {
-        endpointIsNew = !p.bodyId;
-        endpoint = endpointIsNew ? this.registerNewJoint(p) : p;
-      }
+      const endpointIsNew = !p.bodyId;
+      const endpoint = endpointIsNew ? this.registerNewJoint(p) : p;
       const matA = physics._nodes.get(this.pendingJointA.bodyId);
       const matB = physics._nodes.get(endpoint.bodyId);
       const constraint = physics.buildBeam(matA, matB, this.material);
       const beam = { a: this.pendingJointA, b: endpoint, material: this.material, constraint, cost };
       this.beams.push(beam);
-      if (!beamSnapResult) {
-        const newJoints = [];
-        if (this._freeformPendingNewJoint) newJoints.push(this._freeformPendingNewJoint);
-        if (endpointIsNew) newJoints.push(endpoint);
-        this._undoStack.push({ beam, newJoints, cost });
-        this._updateUndoBtn();
-      }
+      const newJoints = [];
+      if (this._freeformPendingNewJoint) newJoints.push(this._freeformPendingNewJoint);
+      if (endpointIsNew) newJoints.push(endpoint);
+      this._undoStack.push({ beam, newJoints, cost });
+      this._updateUndoBtn();
       this._freeformPendingNewJoint = null;
       this[freeformPool] -= cost;
       this._updateBudgetDisplay();
@@ -799,29 +860,13 @@ export class LevelScene extends Phaser.Scene {
     this.ghostGraphics.clear();
 
     if (this._blockState.freeform) {
-      // Freeform: show snap ring + pending wire (original behaviour)
+      // Snap to existing joints; beam-midpoint split (findBeamSnap) is disabled.
       const jointSnap = this.findNearestJoint(raw);
-      const beamSnap = jointSnap ? null : findBeamSnap(raw, this.beams, this.SNAP_RADIUS);
 
       if (jointSnap) {
         this.snapTarget = { x: jointSnap.x, y: jointSnap.y, bodyId: jointSnap.bodyId };
         this.snapGraphics.lineStyle(3, VIZ.JOINT_COLOR, 0.9);
         this.snapGraphics.strokeCircle(jointSnap.x, jointSnap.y, VIZ.JOINT_RADIUS + 5);
-      } else if (beamSnap) {
-        const { x, y } = beamSnap.point;
-        this.snapTarget = { x, y };
-        const GREEN = 0x44dd44;
-        this.snapGraphics.fillStyle(GREEN, 0.5);
-        this.snapGraphics.fillCircle(x, y, 8);
-        this.snapGraphics.lineStyle(2, GREEN, 0.9);
-        this.snapGraphics.strokeCircle(x, y, 8);
-        const HALF = 12;
-        this.snapGraphics.beginPath();
-        this.snapGraphics.moveTo(x - HALF, y);
-        this.snapGraphics.lineTo(x + HALF, y);
-        this.snapGraphics.moveTo(x, y - HALF);
-        this.snapGraphics.lineTo(x, y + HALF);
-        this.snapGraphics.strokePath();
       } else {
         this.snapTarget = null;
       }
@@ -1194,10 +1239,19 @@ export class LevelScene extends Phaser.Scene {
       physics.setTimeScale(1.0);
       physics.setGravity(this._cheatParams.gravityY);
       physics.setRunnerEnabled(true);   // start simulating
-      const design = resolveVehicleDesign(this.level, VEHICLE_PRESETS, this._vehiclePreset);
+      // Cheat panel is the live source of truth for the vehicle — seeded from
+      // the resolved design at create(), then editable via the GUI sliders.
+      const design = {
+        weight:       this._cheatParams.weight,
+        speed:        this._cheatParams.speed,
+        acceleration: this._cheatParams.acceleration,
+      };
+      const spawn = this._spawnPoint();
       const vehicleConfig = {
         ...this.level.vehicles[0], // spec §2 rule 3: always an array
         ...vehicleParamsFromDesign(design),
+        spawnX: spawn.x,
+        spawnY: spawn.y,
       };
       physics.spawnVehicle(vehicleConfig);
       cam.follow(() => physics.getVehicleChassisPosition());
@@ -1244,21 +1298,15 @@ export class LevelScene extends Phaser.Scene {
 
   _onToolSelect(toolKey) {
     if (toolKey === 'road' || toolKey === 'beam') {
+      // Free-form only: skip block/ghost mode, enter freeform with the selected material.
       this._removeMode = false;
       const matKey = toolKey === 'road' ? 'road' : 'wood';
       const mat = this.level.materials[matKey];
       if (!mat) return;
-      const currentSize = this._blockState.size ?? 'M';
-      const block = mat.blocks[currentSize] ?? mat.blocks.M ?? Object.values(mat.blocks)[0];
-      const sizeKey = block === mat.blocks[currentSize] ? currentSize : 'M';
-      this._blockState.material = mat;
-      this._blockState.size = block ? sizeKey : null;
-      this._blockState.blockLength = block?.length ?? 0;
-      this._blockState.freeform = false;
       this.material = mat;
-      this._ghost.show();
-      const sizes = Object.entries(mat.blocks).map(([key, b]) => ({ key, length: b.length, cost: b.cost }));
-      bus.emit('sizes:show', { sizes, current: this._blockState.size });
+      this._blockState = { freeform: true, material: null, size: null, blockLength: 0 };
+      this._ghost.hide();
+      bus.emit('sizes:hide');
     } else if (toolKey === 'free') {
       this._removeMode = false;
       this._blockState.freeform = !this._blockState.freeform;
@@ -1375,8 +1423,16 @@ export class LevelScene extends Phaser.Scene {
       cam.tick(this.time.now);
       this.updateCreakAudio();
       this.redrawBeamBases();
-      this._jointStrain = this.redrawStressOverlay();
-      this.redrawJoints(this._jointStrain);
+      // Stress glow is a taught concept (L04 "Gravity Pulls Down"). Levels
+      // before it set stressGlow:false so the glow stays a fresh reveal.
+      if (this.level.stressGlow === false) {
+        this.stressGraphics.clear();
+        this._jointStrain = null;
+        this.redrawJoints(new Map());
+      } else {
+        this._jointStrain = this.redrawStressOverlay();
+        this.redrawJoints(this._jointStrain);
+      }
       this.redrawSnapMarkers();
       this.redrawVehicle();
       this._updateDebugHud();
@@ -1477,8 +1533,8 @@ export class LevelScene extends Phaser.Scene {
   }
 
   onBeamSnapped() {
-    // Task 8.5 will trigger slow-mo here; for now just register the fail.
-    if (!this.failOverlay) this.showFail();
+    // Win takes priority — don't trigger fail if the player already crossed.
+    if (!this.failOverlay && !this.winOverlay) this.showFail();
   }
 
   showFail() {
@@ -1514,8 +1570,9 @@ export class LevelScene extends Phaser.Scene {
   checkWin() {
     const pos = physics.getVehicleChassisPosition();
     if (!pos) return;
-    const rightAnchor = this.level.anchors.find(a => a.side === 'right');
-    if (pos.x >= rightAnchor.x - 20 && !this.winOverlay && !this.failOverlay) {
+    // Win when the vehicle reaches the checkpoint partway across the far
+    // landmass — not merely the near edge of the right cliff.
+    if (pos.x >= this._checkpointX && !this.winOverlay && !this.failOverlay) {
       this.showWin();
     }
   }

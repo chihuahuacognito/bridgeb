@@ -1,6 +1,7 @@
 // src/systems/tutorial.js
 // Data-driven tutorial cards rendered into #ui-modals.
 // Follows the system lifecycle contract: attach(scene), detach(scene), reset().
+import { bus } from '../ui-html/bus.js';
 
 const PHASE_HINT_AFTER = { tutorial: 1, topic: 2, challenge: 2 };
 
@@ -61,7 +62,7 @@ const tutorial = {
     tx.className = 'tut-text';
     tx.textContent = text ?? '';
     el.append(ic, tx);
-    el.addEventListener('click', () => this.hideCard());
+    el.addEventListener('click', () => { this.hideCard(); bus.emit('mode:toggle'); });
     this._root.appendChild(el);
     this._card = el;
   },

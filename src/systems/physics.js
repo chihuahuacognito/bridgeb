@@ -56,7 +56,7 @@ const physics = {
   },
 
   detach(_scene) {
-    if (this._scene && this._beforeUpdateCb) {
+    if (this._scene && this._beforeUpdateCb && this._scene.matter?.world) {
       this._scene.matter.world.off('beforeupdate', this._beforeUpdateCb);
     }
     this._beforeUpdateCb = null;
@@ -65,7 +65,7 @@ const physics = {
   },
 
   reset() {
-    if (this._scene) {
+    if (this._scene && this._scene.matter?.world) {
       const toRemove = [
         ...this._nodes.values(),
         ...this._canyonBodies,
@@ -356,8 +356,11 @@ const physics = {
   spawnVehicle(config) {
     if (!this._scene) return null;
     const { spawnAt } = config;
-    const spawnX = spawnAt === 'left' ? 240 : 1040;
-    const spawnY = 320;
+    // Scene supplies spawnX/spawnY derived from the cliff geometry so the
+    // vehicle starts back on the landmass and drives onto the bridge. Fall back
+    // to the old fixed coords if a caller omits them.
+    const spawnX = config.spawnX ?? (spawnAt === 'left' ? 240 : 1040);
+    const spawnY = config.spawnY ?? 320;
     const WHEEL_R   = 10;
     const WHEEL_X   = 26; // ±px from chassis centre
     const CHASSIS_H = 12; // half-height of chassis rectangle
@@ -408,9 +411,18 @@ const physics = {
     // Apply a proportional drive force toward target speed. Only push — never
     // brake — so the car coasts freely on downslopes past maxSpeed. On steep
     // uphills the force is insufficient to overcome gravity and the car stalls.
+    //
+    // Force scales with chassis mass so ACCELERATION (a = F/m) is mass-
+    // independent: a = gain * (maxSpeed - vx). Without this, the fixed-magnitude
+    // force barely exceeded wheel friction for the light car (terminal velocity
+    // collapsed to ~16 px/s vs the ~340 px/s target) and was even weaker for the
+    // heavier truck/tank — the car stalled on flat ground before reaching the
+    // bridge. This is the real cause of the recurring "stuck at the first node"
+    // bug; the overhang/cap/angular-damp fixes only ever patched the seam where
+    // the stall happened to be observed.
     if (dir * vx < maxSpeed) {
       this._scene.matter.body.applyForce(chassis, chassis.position, {
-        x: dir * (maxSpeed - dir * vx) * gain,
+        x: dir * (maxSpeed - dir * vx) * gain * chassis.mass,
         y: 0,
       });
     }
@@ -435,7 +447,7 @@ const physics = {
     const maxSpeed = this._vehicle.config.driveSpeed ?? 3;
     const gain = this._vehicle.config.driveForceGain ?? 0.001;
     const driveForce = (dir * vx < maxSpeed)
-      ? dir * (maxSpeed - dir * vx) * gain
+      ? dir * (maxSpeed - dir * vx) * gain * chassis.mass
       : 0;
 
     // Per-tick acceleration from previous frame's velocity

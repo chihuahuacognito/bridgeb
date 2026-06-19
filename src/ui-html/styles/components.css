@@ -103,7 +103,6 @@
 #ui-hud     { left: 12px; bottom: 118px; width: 260px; }
 #ui-toolbar { left: 12px; right: 12px; bottom: 12px; height: 88px; padding: 10px 12px; display: flex; align-items: center; gap: 6px; background: var(--panel); border-radius: var(--r-lg); box-shadow: var(--shadow-card); z-index: 20; }
 #ui-toolbar .divider { width: 1px; height: 48px; background: var(--border); margin: 0 6px; flex: 0 0 auto; }
-#ui-toolbar .play-small { margin-left: auto; }
 
 /* Size sub-row — floats above the toolbar when ROAD or BEAM is active. */
 #ui-size-row {

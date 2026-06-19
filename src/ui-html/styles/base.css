@@ -33,6 +33,7 @@ body {
   position: absolute;
   inset: 0;
   pointer-events: none;
+  z-index: 100;
 }
 
 #ui-root.mode-test  #ui-sidebar { display: none; }
