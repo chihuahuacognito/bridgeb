@@ -1254,7 +1254,12 @@ export class LevelScene extends Phaser.Scene {
         spawnY: spawn.y,
       };
       physics.spawnVehicle(vehicleConfig);
-      cam.follow(() => physics.getVehicleChassisPosition());
+      // Frame the whole bridge for the test run instead of chasing the vehicle.
+      // World == canvas (1280x720), so zoom 1 / scroll 0 keeps the full span in view.
+      cam.follow(null);
+      this.cameras.main.setZoom(1.0);
+      this.cameras.main.scrollX = 0;
+      this.cameras.main.scrollY = 0;
       this.testEndAt = 0;
       this._undoStack = [];
       this._freeformPendingNewJoint = null;
