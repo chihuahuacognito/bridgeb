@@ -37,6 +37,11 @@ const audio = {
     this._scene.sound.play('thud', { volume: 0.8 });
   },
 
+  playSplash() {
+    if (!this._scene || !this._scene.cache.audio.exists('splash')) return;
+    this._scene.sound.play('splash', { volume: 0.7 });
+  },
+
   startCreak(constraint, stress) {
     if (!this._scene || !this._scene.cache.audio.exists('creak') || this._creakLoops.has(constraint)) return;
     const loop = this._scene.sound.add('creak', { loop: true, volume: stress * 0.5 });
