@@ -1,13 +1,16 @@
 // src/scenes/LevelSelectScene.js
 // Per-module level picker. Receives { moduleId } and renders that module's four
-// levels. Cards keep their per-level phase colour/label (modules are not
-// phase-homogeneous). Generalized from the former flat MenuScene.
+// levels as bricks. Phase (LEARN / DISCOVER / PROVE IT) shows as a small tag so
+// mixed-phase modules read cleanly. Generalized from the former flat MenuScene.
 import Phaser from 'phaser';
 import { ALL_LEVELS, MODULES, MODULE_ORDER, menuEntries } from '../data/leveldata.js';
 import { bus } from '../ui-html/bus.js';
+import {
+  T, FONT_DISPLAY, FONT_BODY, PHASE_LABEL,
+  drawBlueprint, makeBrick, makeChip, popIn,
+} from './ui/menuTheme.js';
 
-const PHASE_COLORS = { tutorial: 0x2e7d32, topic: 0x1565c0, challenge: 0x7b1fa2 };
-const PHASE_LABELS = { tutorial: 'LEARN THE ROPES', topic: 'DISCOVER', challenge: 'PROVE IT' };
+const MODULE_FACE = { M1_GRAVITY: T.faces.sky, M2_SHAPES: T.faces.violet, M3_WEIGHT: T.faces.amber };
 
 export class LevelSelectScene extends Phaser.Scene {
   constructor() {
@@ -20,50 +23,50 @@ export class LevelSelectScene extends Phaser.Scene {
 
   create() {
     bus.emit('ui:screen', 'menu');
-    this.cameras.main.setBackgroundColor('#1a1a2e');
+    drawBlueprint(this);
 
     const mod = MODULES[this.moduleId] ?? MODULES[MODULE_ORDER[0]];
+    const face = MODULE_FACE[this.moduleId] ?? T.faces.sky;
 
-    this.add.text(640, 80, mod.title.toUpperCase(), {
-      fontSize: '44px', color: '#ffffff', fontStyle: 'bold',
+    makeChip(this, { x: 84, y: 44, text: '← Back', fill: 0x24375c, onClick: () => this.scene.start('ModuleSelectScene') });
+
+    this.add.text(640, 88, mod.title, {
+      fontFamily: FONT_DISPLAY, fontStyle: '700', fontSize: '44px', color: T.textHi,
     }).setOrigin(0.5);
-    this.add.text(640, 126, 'Pick a level', {
-      fontSize: '18px', color: '#aaaaaa',
+    this.add.text(640, 132, 'Pick a level', {
+      fontFamily: FONT_BODY, fontStyle: '600', fontSize: '17px', color: T.textMute,
     }).setOrigin(0.5);
 
-    // Build cards from this module's levelIds → numbers read 1..4 within the module.
     const entries = menuEntries(ALL_LEVELS, mod.levelIds);
-    const COLS = 4, CW = 270, CH = 130, GX = 26;
-    const x0 = 640 - ((COLS - 1) * (CW + GX)) / 2;
-    const y = 320;
+    const W = 250, H = 190, GAP = 26;
+    const x0 = 640 - ((entries.length - 1) * (W + GAP)) / 2;
+    const y = 360;
 
-    entries.forEach((e, i) => {
-      const x = x0 + i * (CW + GX);
-      const card = this.add.rectangle(x, y, CW, CH, PHASE_COLORS[e.phase] ?? 0x444444)
-        .setStrokeStyle(2, 0xffffff, 0.25)
-        .setInteractive({ useHandCursor: true });
-      this.add.text(x, y - 30, `${i + 1}`, {
-        fontSize: '32px', color: '#ffffff', fontStyle: 'bold',
-      }).setOrigin(0.5);
-      this.add.text(x, y + 10, e.title, {
-        fontSize: '18px', color: '#e8e8e8', align: 'center', wordWrap: { width: CW - 30 },
-      }).setOrigin(0.5);
-      this.add.text(x, y + 44, PHASE_LABELS[e.phase] ?? '', {
-        fontSize: '11px', color: '#ffffff',
-      }).setOrigin(0.5).setAlpha(0.6);
+    const bricks = entries.map((e, i) => {
+      const x = x0 + i * (W + GAP);
+      const b = makeBrick(this, {
+        x, y, w: W, h: H, color: face,
+        onClick: () => this.scene.start('LevelScene', { levelId: e.id }),
+      });
+      const cy = b.faceCenterY;
 
-      card.on('pointerdown', () => this.scene.start('LevelScene', { levelId: e.id }));
-      card.on('pointerover', () => card.setAlpha(0.8));
-      card.on('pointerout', () => card.setAlpha(1));
+      const eyebrow = this.add.text(0, cy - 62, `LEVEL ${i + 1}`, {
+        fontFamily: FONT_BODY, fontStyle: '800', fontSize: '13px', color: T.onBrickSoft,
+      }).setOrigin(0.5).setLetterSpacing(3).setAlpha(0.85);
+      const title = this.add.text(0, cy - 16, e.title, {
+        fontFamily: FONT_DISPLAY, fontStyle: '700', fontSize: '20px', color: T.onBrick,
+        align: 'center', wordWrap: { width: W - 40 }, lineSpacing: 2,
+      }).setOrigin(0.5);
+      b.face.add([eyebrow, title]);
+
+      const pill = makeChip(this, {
+        x: 0, y: cy + 58, text: PHASE_LABEL[e.phase] ?? '', fontSize: 12, padX: 12,
+        fill: T.phase[e.phase] ?? 0x2b3a57, textColor: '#0d1b30',
+      });
+      b.face.add(pill);
+      return b.container;
     });
 
-    // Back → module picker.
-    const b = this.add.rectangle(80, 40, 110, 40, 0x33384d)
-      .setStrokeStyle(2, 0xffffff, 0.2)
-      .setInteractive({ useHandCursor: true });
-    this.add.text(80, 40, '← Back', { fontSize: '16px', color: '#cfd3e0' }).setOrigin(0.5);
-    b.on('pointerdown', () => this.scene.start('ModuleSelectScene'));
-    b.on('pointerover', () => b.setAlpha(0.8));
-    b.on('pointerout', () => b.setAlpha(1));
+    popIn(this, bricks);
   }
 }

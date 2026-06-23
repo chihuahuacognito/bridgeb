@@ -26,6 +26,12 @@ export class BootScene extends Phaser.Scene {
   }
 
   create() {
-    this.scene.start('AppSelectScene');
+    // Gate on web-font readiness so the canvas menus render in Fredoka/Nunito
+    // instead of a fallback that Phaser won't auto-redraw once the font loads.
+    const fonts = ['600 16px Fredoka', '700 16px Fredoka', '400 16px Nunito', '700 16px Nunito', '800 16px Nunito'];
+    const ready = (typeof document !== 'undefined' && document.fonts)
+      ? Promise.all(fonts.map((f) => document.fonts.load(f))).catch(() => {})
+      : Promise.resolve();
+    ready.finally(() => this.scene.start('AppSelectScene'));
   }
 }

@@ -4,8 +4,11 @@
 import Phaser from 'phaser';
 import { APPS } from '../data/leveldata.js';
 import { bus } from '../ui-html/bus.js';
+import { T, FONT_DISPLAY, FONT_BODY, drawBlueprint, makeBrick, makeChip, popIn } from './ui/menuTheme.js';
 
-const APP_ROUTE = { bridge: 'ModuleSelectScene' };
+const FACE = { bridge: T.faces.bridge, rocket: T.faces.rocket, farm: T.faces.farm };
+const ICON = { bridge: '🌉', rocket: '🚀', farm: '🌱' };
+const ROUTE = { bridge: 'ModuleSelectScene' };
 
 export class AppSelectScene extends Phaser.Scene {
   constructor() {
@@ -14,44 +17,53 @@ export class AppSelectScene extends Phaser.Scene {
 
   create() {
     bus.emit('ui:screen', 'menu'); // keep the in-game HTML HUD hidden
-    this.cameras.main.setBackgroundColor('#1a1a2e');
+    drawBlueprint(this);
 
-    this.add.text(640, 90, 'STEM LAB', {
-      fontSize: '52px', color: '#ffffff', fontStyle: 'bold',
+    this.add.text(640, 92, 'STEM LAB', {
+      fontFamily: FONT_BODY, fontStyle: '800', fontSize: '20px', color: '#36e0d8',
+    }).setOrigin(0.5).setLetterSpacing(6);
+    this.add.text(640, 138, 'Choose a world', {
+      fontFamily: FONT_DISPLAY, fontStyle: '700', fontSize: '52px', color: T.textHi,
     }).setOrigin(0.5);
-    this.add.text(640, 145, 'Choose an app', {
-      fontSize: '18px', color: '#aaaaaa',
-    }).setOrigin(0.5);
 
-    const TW = 320, TH = 220, GX = 40;
-    const x0 = 640 - (APPS.length - 1) * (TW + GX) / 2;
-    const y = 380;
+    const W = 300, H = 270, GAP = 50;
+    const x0 = 640 - ((APPS.length - 1) * (W + GAP)) / 2;
+    const y = 410;
 
-    APPS.forEach((app, i) => {
-      const x = x0 + i * (TW + GX);
-      const fill = app.locked ? 0x33384d : 0x2e7d32;
-      const tile = this.add.rectangle(x, y, TW, TH, fill)
-        .setStrokeStyle(2, 0xffffff, app.locked ? 0.12 : 0.3);
-      this.add.text(x, y - 10, app.title, {
-        fontSize: '26px', color: app.locked ? '#7c8196' : '#ffffff', fontStyle: 'bold',
-        align: 'center', wordWrap: { width: TW - 40 },
+    const bricks = APPS.map((app, i) => {
+      const x = x0 + i * (W + GAP);
+      const locked = app.locked;
+      const b = makeBrick(this, {
+        x, y, w: W, h: H, color: FACE[app.id], locked,
+        onClick: locked ? null : () => this.scene.start(ROUTE[app.id]),
+      });
+      const cy = b.faceCenterY;
+
+      const icon = this.add.text(0, cy - 64, ICON[app.id], { fontSize: '70px' })
+        .setOrigin(0.5).setAlpha(locked ? 0.5 : 1);
+      b.face.add(icon);
+
+      const name = this.add.text(0, cy + 26, app.title.toUpperCase(), {
+        fontFamily: FONT_DISPLAY, fontStyle: '700', fontSize: '26px',
+        color: locked ? '#9fb0cc' : T.onBrick, align: 'center', lineSpacing: 2,
       }).setOrigin(0.5);
+      b.face.add(name);
 
-      if (app.locked) {
-        tile.setAlpha(0.85);
-        this.add.text(x, y + 48, '🔒 Coming soon', {
-          fontSize: '16px', color: '#9aa0b5',
-        }).setOrigin(0.5);
-      } else {
-        tile.setInteractive({ useHandCursor: true });
-        this.add.text(x, y + 48, 'PLAY', {
-          fontSize: '15px', color: '#d6f5d6', fontStyle: 'bold',
-        }).setOrigin(0.5).setAlpha(0.8);
-        const route = APP_ROUTE[app.id];
-        tile.on('pointerdown', () => route && this.scene.start(route));
-        tile.on('pointerover', () => tile.setAlpha(0.85));
-        tile.on('pointerout', () => tile.setAlpha(1));
-      }
+      const badge = makeChip(this, {
+        x: 0, y: cy + 92,
+        text: locked ? '🔒 Coming soon' : '▶ Play',
+        fill: locked ? 0x2b3a57 : T.onBrick,
+        textColor: locked ? '#9fb0cc' : '#ffe9c4',
+        fontSize: 15,
+      });
+      b.face.add(badge);
+      return b.container;
     });
+
+    popIn(this, bricks);
+
+    this.add.text(640, 690, 'Two more worlds coming soon — keep building!', {
+      fontFamily: FONT_BODY, fontStyle: '600', fontSize: '15px', color: T.textMute,
+    }).setOrigin(0.5);
   }
 }
