@@ -209,8 +209,11 @@ export class LevelScene extends Phaser.Scene {
       this.onBeamSnapped();
     });
 
-    // Tan dust puff when a wheel lands hard on a surface.
-    physics.setOnHardLanding((info) => fx.dust(info.x, info.y, info.power));
+    // Tan dust puff + a squash-and-stretch when a wheel lands hard on a surface.
+    physics.setOnHardLanding((info) => {
+      fx.dust(info.x, info.y, info.power);
+      fx.squash(info.power);
+    });
     this.winOverlay = null;
     this.failOverlay = null;
     this.testEndAt = 0; // when > 0, auto-return to build mode at this timestamp
@@ -1611,6 +1614,9 @@ export class LevelScene extends Phaser.Scene {
     physics.freezeVehicle();
     this.testEndAt = 0; // no auto-return on win — the modal owns the exit
     cam.follow(null);
+    // Victory shard fountain at the vehicle (sprite may be hidden — use physics).
+    const vpos = physics.getVehicleChassisPosition();
+    if (vpos) fx.victory(vpos.x, vpos.y);
     const i = LEVEL_ORDER.indexOf(this.levelId);
     bus.emit('level:result', {
       won: true,
@@ -1656,12 +1662,15 @@ export class LevelScene extends Phaser.Scene {
     const submerge = waterY == null ? -1 : cy - waterY;
     const sinkAlpha = submerge <= 0 ? 1 : Math.max(0, 1 - submerge / SINK_FADE_PX);
 
+    // Squash-and-stretch multiplier (set by fx on impact, tweens back to 1,1).
+    const { sx, sy } = fx.getSquash();
+
     if (this.textures.exists(key) && assets.has(key)) {
       if (!this._vehicleSprite) {
         this._vehicleSprite = this.add.image(cx, cy, key).setOrigin(0.5, 0.5).setDepth(2).setDisplaySize(120, 72);
       }
       this._vehicleSprite.setTexture(key).setVisible(true).setAlpha(sinkAlpha)
-        .setDisplaySize(120, 72).setPosition(cx, cy).setRotation(c.angle);
+        .setDisplaySize(120 * sx, 72 * sy).setPosition(cx, cy).setRotation(c.angle);
       return;
     }
     this._vehicleSprite?.setVisible(false);
@@ -1673,7 +1682,7 @@ export class LevelScene extends Phaser.Scene {
       this.vehicleGraphics.fillCircle(v.wheelB.position.x, v.wheelB.position.y, 10);
     }
     const cos = Math.cos(c.angle), sin = Math.sin(c.angle);
-    const hw = 40, hh = 12;
+    const hw = 40 * sx, hh = 12 * sy;
     const corners = [
       { x: cx - hw * cos + hh * sin, y: cy - hw * sin - hh * cos },
       { x: cx + hw * cos + hh * sin, y: cy + hw * sin - hh * cos },
