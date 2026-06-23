@@ -209,10 +209,11 @@ export class LevelScene extends Phaser.Scene {
       this.onBeamSnapped();
     });
 
-    // Tan dust puff + a squash-and-stretch when a wheel lands hard on a surface.
+    // Tan dust puff + squash + a small power-scaled camera kick on a hard landing.
     physics.setOnHardLanding((info) => {
       fx.dust(info.x, info.y, info.power);
       fx.squash(info.power);
+      juice.shake(0.004 + 0.012 * info.power, 120);
     });
     this.winOverlay = null;
     this.failOverlay = null;
@@ -1614,9 +1615,11 @@ export class LevelScene extends Phaser.Scene {
     physics.freezeVehicle();
     this.testEndAt = 0; // no auto-return on win — the modal owns the exit
     cam.follow(null);
-    // Victory shard fountain at the vehicle (sprite may be hidden — use physics).
+    // Victory shard fountain at the vehicle (sprite may be hidden — use physics)
+    // plus a warm celebratory screen flash.
     const vpos = physics.getVehicleChassisPosition();
     if (vpos) fx.victory(vpos.x, vpos.y);
+    juice.flash(350, 255, 240, 180);
     const i = LEVEL_ORDER.indexOf(this.levelId);
     bus.emit('level:result', {
       won: true,

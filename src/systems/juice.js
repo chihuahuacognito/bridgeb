@@ -45,6 +45,10 @@ const juice = {
     if (this._scene) this._scene.cameras.main.shake(durationMs, intensity);
   },
 
+  flash(durationMs = 250, r = 255, g = 255, b = 255) {
+    if (this._scene) this._scene.cameras.main.flash(durationMs, r, g, b);
+  },
+
   tick(nowMs, cascadeActive) {
     if (!this._slowMoActive) return;
     if (nowMs < this._freezeUntil) {
