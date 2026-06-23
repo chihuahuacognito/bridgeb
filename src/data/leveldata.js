@@ -2,7 +2,9 @@
 // Per spec §2 rule 3: level.vehicles is ALWAYS an array.
 // Spec: docs/superpowers/specs/2026-06-12-level-progression-design.md
 
-const WATER_Y = 660;
+// Visible water surface (matches the painted `background` asset's waterline, not
+// the world floor). Splash, sink-fade and debris cull all key off this. Tune in-app.
+const WATER_Y = 550;
 const BLOCK_LEN  = { S: 40, M: 80, L: 160, XL: 240 };
 const ROAD_COST  = { S: 2,  M: 4,  L: 8,   XL: 12 };
 const WOOD_COST  = { S: 1,  M: 2,  L: 4,   XL: 6 };
@@ -351,13 +353,13 @@ export const DEV_STRESS = {
       physRect: { x: 1140, y: 460, width: 280, height: 200 },
       color: 0x2c3033,
     },
-    waterY: 660,
+    waterY: 550,
   },
   rocks: [
     {
       id: 'C1',
       sprite: 'rock-pillar',
-      // Tapered pillar: narrow at top, wider at base (submerged below waterY 660)
+      // Tapered pillar: narrow at top, wider at base (submerged below waterY 550)
       verts: [
         { x: 612, y: 530 },
         { x: 688, y: 530 },

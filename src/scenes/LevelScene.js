@@ -538,6 +538,10 @@ export class LevelScene extends Phaser.Scene {
   }
 
   drawWater() {
+    // The painted `background` asset already includes the water. Drawing a flat
+    // navy rectangle over it would cover the art, so the procedural fill is only
+    // the no-asset fallback (mirrors drawSky's gradient fallback).
+    if (this.textures.exists('background') && assets.has('background')) return;
     const g = this.add.graphics();
     const { waterY } = this.level.terrain;
     // Main water body — dark navy
@@ -1641,18 +1645,25 @@ export class LevelScene extends Phaser.Scene {
     const cx = c.position.x, cy = c.position.y;
     const key = this._vehiclePreset;
 
+    // Sink-fade: once the chassis drops past the waterline the vehicle fades out
+    // over SINK_FADE_PX, reading as it sinking under the river surface.
+    const waterY = this.level?.terrain?.waterY;
+    const SINK_FADE_PX = 90;
+    const submerge = waterY == null ? -1 : cy - waterY;
+    const sinkAlpha = submerge <= 0 ? 1 : Math.max(0, 1 - submerge / SINK_FADE_PX);
+
     if (this.textures.exists(key) && assets.has(key)) {
       if (!this._vehicleSprite) {
         this._vehicleSprite = this.add.image(cx, cy, key).setOrigin(0.5, 0.5).setDepth(2).setDisplaySize(120, 72);
       }
-      this._vehicleSprite.setTexture(key).setVisible(true)
+      this._vehicleSprite.setTexture(key).setVisible(true).setAlpha(sinkAlpha)
         .setDisplaySize(120, 72).setPosition(cx, cy).setRotation(c.angle);
       return;
     }
     this._vehicleSprite?.setVisible(false);
 
     // Procedural fallback — Poly Bridge style rectangle chassis + wheels.
-    this.vehicleGraphics.fillStyle(0x222222, 1);
+    this.vehicleGraphics.fillStyle(0x222222, sinkAlpha);
     if (v.wheelA) {
       this.vehicleGraphics.fillCircle(v.wheelA.position.x, v.wheelA.position.y, 10);
       this.vehicleGraphics.fillCircle(v.wheelB.position.x, v.wheelB.position.y, 10);
@@ -1665,9 +1676,9 @@ export class LevelScene extends Phaser.Scene {
       { x: cx + hw * cos - hh * sin, y: cy + hw * sin + hh * cos },
       { x: cx - hw * cos - hh * sin, y: cy - hw * sin + hh * cos },
     ];
-    this.vehicleGraphics.fillStyle(0xf08c1a, 1);
+    this.vehicleGraphics.fillStyle(0xf08c1a, sinkAlpha);
     this.vehicleGraphics.fillPoints(corners, true);
-    this.vehicleGraphics.lineStyle(2, 0x331a00, 1);
+    this.vehicleGraphics.lineStyle(2, 0x331a00, sinkAlpha);
     this.vehicleGraphics.strokePoints(corners, true);
   }
 
