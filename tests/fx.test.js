@@ -2,7 +2,7 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import audio from '../src/systems/audio.js';
-import {
+import fx, {
   crossedWaterline, clampPower, emitParams,
   REF_SPLASH_SPEED, SPLASH_MIN_DROPLETS, SPLASH_MAX_DROPLETS,
 } from '../src/systems/fx.js';
@@ -68,5 +68,61 @@ describe('emitParams', () => {
   it('clamps out-of-range power', () => {
     expect(emitParams(-1).count).toBe(SPLASH_MIN_DROPLETS);
     expect(emitParams(99).count).toBe(SPLASH_MAX_DROPLETS);
+  });
+});
+
+function mkGraphics() {
+  const g = {
+    fillStyle: vi.fn(() => g), fillCircle: vi.fn(() => g), fillTriangle: vi.fn(() => g),
+    lineStyle: vi.fn(() => g), strokeCircle: vi.fn(() => g),
+    setDepth: vi.fn(() => g), setScale: vi.fn(() => g),
+    generateTexture: vi.fn(() => g), destroy: vi.fn(() => g),
+  };
+  return g;
+}
+function mkEmitter() {
+  return { setDepth: vi.fn(function () { return this; }), explode: vi.fn(), killAll: vi.fn(), destroy: vi.fn() };
+}
+function mkFxScene() {
+  const existing = new Set();
+  const scene = {
+    _existing: existing,
+    textures: { exists: (k) => existing.has(k) },
+    add: {
+      graphics: vi.fn(() => mkGraphics()),
+      particles: vi.fn(() => mkEmitter()),
+    },
+    tweens: { add: vi.fn((cfg) => { cfg.onComplete?.(); }) },
+    cache: { audio: { exists: () => false } },
+    sound: { play: vi.fn() },
+  };
+  // generateTexture should register the key so re-attach is idempotent
+  scene.add.graphics = vi.fn(() => {
+    const g = mkGraphics();
+    g.generateTexture = vi.fn((key) => { existing.add(key); return g; });
+    return g;
+  });
+  return scene;
+}
+
+describe('fx lifecycle', () => {
+  beforeEach(() => fx.detach());
+
+  it('generates the droplet texture once across repeated attach', () => {
+    const scene = mkFxScene();
+    fx.attach(scene);
+    const callsAfterFirst = scene.add.graphics.mock.calls.length;
+    fx.detach();
+    fx.attach(scene);                         // textures already exist now
+    expect(scene.add.graphics.mock.calls.length).toBe(callsAfterFirst); // no new gen
+  });
+
+  it('creates a splash emitter on attach and destroys it on detach', () => {
+    const scene = mkFxScene();
+    fx.attach(scene);
+    expect(scene.add.particles).toHaveBeenCalledTimes(1);
+    const emitter = scene.add.particles.mock.results[0].value;
+    fx.detach();
+    expect(emitter.destroy).toHaveBeenCalled();
   });
 });

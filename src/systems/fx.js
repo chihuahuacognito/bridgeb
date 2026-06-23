@@ -33,3 +33,48 @@ export function emitParams(power) {
   const count = Math.round(SPLASH_MIN_DROPLETS + (SPLASH_MAX_DROPLETS - SPLASH_MIN_DROPLETS) * p);
   return { count };
 }
+
+const fx = {
+  _scene: null,
+  _splashEmitter: null,
+
+  attach(scene) {
+    this._scene = scene;
+    this._ensureTextures(scene);
+    this._splashEmitter = scene.add.particles(0, 0, DROPLET_KEY, {
+      emitting: false,            // we fire bursts manually via explode()
+      tint: 0x4aa3ff,             // blue (WebGL only; ignored on Canvas fallback)
+      speed: { min: 60, max: 200 },
+      angle: { min: 200, max: 340 }, // up-and-out cone
+      lifespan: { min: 350, max: 700 },
+      gravityY: 600,
+      scale: { start: 0.9, end: 0.1 },
+      maxParticles: 120,          // hard cap so cascades can't unbound particle count
+    }).setDepth(6);               // above debris(5) and vehicle(2)
+  },
+
+  detach() {
+    this._splashEmitter?.destroy();
+    this._splashEmitter = null;
+    this._scene = null;
+  },
+
+  reset() {
+    // Clear in-flight particles so they don't bleed across build<->test transitions.
+    this._splashEmitter?.killAll?.();
+  },
+
+  _ensureTextures(scene) {
+    if (!scene.textures.exists(DROPLET_KEY)) {
+      // Graphics has no radial gradient — fake a soft dot with concentric alpha rings.
+      const g = scene.add.graphics();
+      g.fillStyle(0xffffff, 0.35); g.fillCircle(8, 8, 8);
+      g.fillStyle(0xffffff, 0.60); g.fillCircle(8, 8, 5);
+      g.fillStyle(0xffffff, 1.00); g.fillCircle(8, 8, 3);
+      g.generateTexture(DROPLET_KEY, 16, 16);
+      g.destroy();
+    }
+  },
+};
+
+export default fx;
