@@ -413,9 +413,17 @@ const physics = {
 
     // Wheels spawn at chassis-bottom corners so the zero-length axle constraints
     // start at rest length and produce no initial jolt.
+    //
+    // Wheel density scales with the chassis so the chassis:wheel mass ratio stays
+    // ~constant (≈ the chassis/wheel AREA ratio) across all vehicles. With a fixed
+    // light wheel density, a heavy chassis (tank) sat on near-massless wheels at a
+    // ~40:1 ratio the contact solver couldn't hold — the wheel penetrated and the
+    // vehicle tunnelled through the static road deck. Matching densities keeps the
+    // ratio at the light car's safe ~6:1 for every vehicle.
+    const chassisDensity = config.density ?? 0.008;
     const wheelOpts = {
       label: 'vehicle-wheel',
-      density: 0.003,
+      density: Math.max(0.003, chassisDensity),
       friction: 0.8,
       frictionStatic: 0.5,
       restitution: 0,
