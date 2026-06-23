@@ -408,3 +408,42 @@ export function menuEntries(allLevels, order) {
     phase: allLevels[id].phase,
   }));
 }
+
+// ── Lesson structure: apps + Bridge Builder modules ─────────────────────────
+// Top-level apps. Only Bridge Builder is unlocked; the others are visual-only
+// locked tiles until their apps exist.
+export const APPS = [
+  { id: 'bridge', title: 'Bridge Builder', locked: false },
+  { id: 'rocket', title: 'Rocket Launch',  locked: true  },
+  { id: 'farm',   title: 'My Farm',        locked: true  },
+];
+
+// The 12 levels grouped 4-4-4 by rising mechanical complexity. Concatenating the
+// levelIds in MODULE_ORDER yields LEVEL_ORDER, so cross-module "Next" still works.
+export const MODULES = {
+  M1_GRAVITY: {
+    id: 'M1_GRAVITY', title: 'Gravity & Falling',
+    blurb: 'Things fall — span the gap before gravity wins',
+    levelIds: ['L01', 'L02', 'L03', 'L04'],
+  },
+  M2_SHAPES: {
+    id: 'M2_SHAPES', title: 'Strong Shapes',
+    blurb: 'Triangles and load paths make bridges strong',
+    levelIds: ['L05', 'L06', 'L07', 'L08'],
+  },
+  M3_WEIGHT: {
+    id: 'M3_WEIGHT', title: 'Weight & Engineering',
+    blurb: 'Carry heavy loads on a budget',
+    levelIds: ['L09', 'L10', 'L11', 'L12'],
+  },
+};
+
+export const MODULE_ORDER = ['M1_GRAVITY', 'M2_SHAPES', 'M3_WEIGHT'];
+
+// The module id that contains a level, or null (e.g. DEV_STRESS / unknown ids).
+export function moduleForLevel(levelId) {
+  for (const id of MODULE_ORDER) {
+    if (MODULES[id].levelIds.includes(levelId)) return id;
+  }
+  return null;
+}
