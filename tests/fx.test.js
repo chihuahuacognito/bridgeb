@@ -126,3 +126,40 @@ describe('fx lifecycle', () => {
     expect(emitter.destroy).toHaveBeenCalled();
   });
 });
+
+describe('fx.splash', () => {
+  beforeEach(() => fx.detach());
+
+  it('explodes the emitter with a power-scaled count at the given point', () => {
+    const scene = mkFxScene();
+    fx.attach(scene);
+    const emitter = scene.add.particles.mock.results[0].value;
+    fx.splash(100, 660, 1);
+    expect(emitter.explode).toHaveBeenCalledWith(SPLASH_MAX_DROPLETS, 100, 660);
+  });
+
+  it('draws a ripple graphic that tweens then destroys itself', () => {
+    const scene = mkFxScene();
+    fx.attach(scene);
+    const graphicsCallsBefore = scene.add.graphics.mock.calls.length;
+    fx.splash(100, 660, 0.5);
+    expect(scene.add.graphics.mock.calls.length).toBe(graphicsCallsBefore + 1); // ripple graphic
+    expect(scene.tweens.add).toHaveBeenCalled();
+    const ripple = scene.add.graphics.mock.results.at(-1).value;
+    expect(ripple.destroy).toHaveBeenCalled();   // mkFxScene tween runs onComplete synchronously
+  });
+
+  it('plays the splash sound', () => {
+    const scene = mkFxScene();
+    const playSpy = vi.spyOn(audio, 'playSplash');
+    fx.attach(scene);
+    fx.splash(100, 660, 0.5);
+    expect(playSpy).toHaveBeenCalled();
+    playSpy.mockRestore();
+  });
+
+  it('is a safe no-op when detached', () => {
+    fx.detach();
+    expect(() => fx.splash(0, 0, 1)).not.toThrow();
+  });
+});

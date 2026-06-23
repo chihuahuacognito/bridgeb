@@ -64,6 +64,27 @@ const fx = {
     this._splashEmitter?.killAll?.();
   },
 
+  splash(x, y, power) {
+    if (!this._scene || !this._splashEmitter) return;
+    const { count } = emitParams(power);
+    this._splashEmitter.explode(count, x, y);
+    this._ripple(x, y, power);
+    audio.playSplash();
+  },
+
+  _ripple(x, y, power) {
+    const s = this._scene;
+    const radius = 28 + 36 * (power < 0 ? 0 : power > 1 ? 1 : power);
+    const g = s.add.graphics({ x, y }).setDepth(-45); // above water fill(-50), below terrain
+    g.lineStyle(2, 0x9fd8ff, 0.85);
+    g.strokeCircle(0, 0, radius);
+    g.setScale(0.2);
+    s.tweens.add({
+      targets: g, scale: 1, alpha: 0, duration: 480, ease: 'Cubic.out',
+      onComplete: () => g.destroy(),
+    });
+  },
+
   _ensureTextures(scene) {
     if (!scene.textures.exists(DROPLET_KEY)) {
       // Graphics has no radial gradient — fake a soft dot with concentric alpha rings.
