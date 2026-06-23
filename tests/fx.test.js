@@ -2,6 +2,10 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import audio from '../src/systems/audio.js';
+import {
+  crossedWaterline, clampPower, emitParams,
+  REF_SPLASH_SPEED, SPLASH_MIN_DROPLETS, SPLASH_MAX_DROPLETS,
+} from '../src/systems/fx.js';
 
 function mkAudioScene(existingKeys = []) {
   const keys = new Set(existingKeys);
@@ -26,5 +30,43 @@ describe('audio.playSplash', () => {
     audio.attach(scene);
     audio.playSplash();
     expect(scene.sound.play).toHaveBeenCalledWith('splash', expect.objectContaining({ volume: expect.any(Number) }));
+  });
+});
+
+describe('crossedWaterline', () => {
+  it('fires on a downward crossing only', () => {
+    expect(crossedWaterline(650, 670, 660)).toBe(true);   // above -> below
+    expect(crossedWaterline(670, 650, 660)).toBe(false);  // below -> above (exit)
+    expect(crossedWaterline(640, 650, 660)).toBe(false);  // stays above
+    expect(crossedWaterline(670, 680, 660)).toBe(false);  // stays below
+  });
+  it('treats touching the line as crossed', () => {
+    expect(crossedWaterline(659, 660, 660)).toBe(true);
+  });
+});
+
+describe('clampPower', () => {
+  it('normalizes speed against the reference and clamps to 0..1', () => {
+    expect(clampPower(0, REF_SPLASH_SPEED)).toBe(0);
+    expect(clampPower(REF_SPLASH_SPEED, REF_SPLASH_SPEED)).toBe(1);
+    expect(clampPower(REF_SPLASH_SPEED * 2, REF_SPLASH_SPEED)).toBe(1);
+    expect(clampPower(REF_SPLASH_SPEED / 2, REF_SPLASH_SPEED)).toBeCloseTo(0.5);
+  });
+  it('returns 0 for a non-positive reference', () => {
+    expect(clampPower(5, 0)).toBe(0);
+  });
+});
+
+describe('emitParams', () => {
+  it('scales droplet count from min (power 0) to max (power 1)', () => {
+    expect(emitParams(0).count).toBe(SPLASH_MIN_DROPLETS);
+    expect(emitParams(1).count).toBe(SPLASH_MAX_DROPLETS);
+    const mid = emitParams(0.5).count;
+    expect(mid).toBeGreaterThan(SPLASH_MIN_DROPLETS);
+    expect(mid).toBeLessThan(SPLASH_MAX_DROPLETS);
+  });
+  it('clamps out-of-range power', () => {
+    expect(emitParams(-1).count).toBe(SPLASH_MIN_DROPLETS);
+    expect(emitParams(99).count).toBe(SPLASH_MAX_DROPLETS);
   });
 });
