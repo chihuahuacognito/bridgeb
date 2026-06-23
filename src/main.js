@@ -1,7 +1,9 @@
 import './ui-html/styles/index.css';
 import Phaser from 'phaser';
 import { BootScene } from './scenes/BootScene.js';
-import { MenuScene } from './scenes/MenuScene.js';
+import { AppSelectScene } from './scenes/AppSelectScene.js';
+import { ModuleSelectScene } from './scenes/ModuleSelectScene.js';
+import { LevelSelectScene } from './scenes/LevelSelectScene.js';
 import { LevelScene } from './scenes/LevelScene.js';
 import { mountUi } from './ui-html/index.js';
 
@@ -30,7 +32,7 @@ const config = {
       debug: false,
     },
   },
-  scene: [BootScene, MenuScene, LevelScene],
+  scene: [BootScene, AppSelectScene, ModuleSelectScene, LevelSelectScene, LevelScene],
 };
 
 new Phaser.Game(config);

@@ -1,7 +1,7 @@
 // src/scenes/LevelScene.js
 import Phaser from 'phaser';
 import GUI from 'lil-gui';
-import { ALL_LEVELS, LEVEL_ORDER } from '../data/leveldata.js';
+import { ALL_LEVELS, LEVEL_ORDER, moduleForLevel } from '../data/leveldata.js';
 import physics from '../systems/physics.js';
 import tutorial from '../systems/tutorial.js';
 import { expandPrebuilt } from '../utils/prebuilt.js';
@@ -282,7 +282,11 @@ export class LevelScene extends Phaser.Scene {
         const next = i >= 0 ? LEVEL_ORDER[i + 1] : null;
         if (next) this.scene.start('LevelScene', { levelId: next });
       },
-      levelMenu:  () => this.scene.start('MenuScene'),
+      levelMenu:  () => {
+        const m = moduleForLevel(this.levelId);
+        if (m) this.scene.start('LevelSelectScene', { moduleId: m });
+        else   this.scene.start('ModuleSelectScene');
+      },
     };
     bus.on('undo',           this._busHandlers.undo);
     bus.on('clear',          this._busHandlers.clear);
