@@ -78,6 +78,24 @@ Scene transitions and Phaser-canvas rendering are verified in-app (per `docs/AI_
 - `moduleForLevel(id)` returns the correct module for each level and `null` for `DEV_STRESS`.
 - `APPS` has exactly one unlocked app (`bridge`).
 
+## Review Refinements (agent-vetted — binding)
+
+- **One navigation handler, not two.** The in-game Home button (`TopBar.js`) and the result modal's Menu button (`ResultModal.js`) both emit the single bus event `level:menu`, handled once at `LevelScene.js:285` (`levelMenu: () => this.scene.start('MenuScene')`). Repoint that one handler:
+  ```js
+  levelMenu: () => {
+    const m = moduleForLevel(this.levelId);
+    if (m) this.scene.start('LevelSelectScene', { moduleId: m });
+    else   this.scene.start('ModuleSelectScene');
+  }
+  ```
+  Add `moduleForLevel` to LevelScene's existing `leveldata.js` import (today only `ALL_LEVELS, LEVEL_ORDER`). No edits to TopBar/ResultModal.
+- **Scene data via `init(data)`**, mirroring `LevelScene.js:117`. `LevelSelectScene.init(data){ this.moduleId = data?.moduleId || MODULE_ORDER[0]; }`. Create ALL display objects in `create()`, never in `init()`.
+- **Per-module level cards:** build from `menuEntries(ALL_LEVELS, MODULES[moduleId].levelIds)` (the helper already takes `(allLevels, order)` — no signature change). Card number = `1 + index within the module`. Cards keep their **per-level** `phase` color/label (`PHASE_COLORS`/`PHASE_LABELS`); modules are intentionally **not** phase-homogeneous (M1 = tutorial×3+topic, M3 = topic+challenge×3) — do not invent a per-module color.
+- **AppSelectScene is the root** (BootScene starts it): no Back button. **Locked tiles** (rocket, farm): rendered greyed with a lock badge + "Coming soon", **no `setInteractive` and no pointer handler** (pure visual). Use a text badge (emoji 🔒 acceptable on Windows; plain "LOCKED" is the safe fallback).
+- **Atomic rename.** Scene keys are strings, so a mismatch is a silent black screen (no build error). In one commit update: `main.js` import + `scene:[]` array, `BootScene` start target → `AppSelectScene`, the `MenuScene` class/`super()` → `LevelSelectScene`, and `LevelScene.js:285`.
+- **L12 terminal & Dev Stress:** unchanged Next logic — L12 shows no Next (`hasNext` false), its Menu → `LevelSelectScene{M3_WEIGHT}`. `DEV_STRESS` → `moduleForLevel` returns `null` → Menu/Home → `ModuleSelectScene`; it has no Next.
+- **Test additions:** `APPS.length === 3`, exactly one `locked:false` and its `id === 'bridge'`; no `levelId` appears in two modules and none duplicated within a module; `moduleForLevel('DEV_STRESS') === null` and `moduleForLevel('NOPE') === null`; for every `id` in each module's `levelIds`, `moduleForLevel(id)` equals that module id.
+
 ## Risks / Notes
 
 - HTML HUD bleed-through: the new menu scenes must emit `ui:screen','menu'` so `#ui-toolbar`/sidebar stay hidden (same mechanism today's `MenuScene` relies on).
