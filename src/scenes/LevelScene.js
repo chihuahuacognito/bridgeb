@@ -8,7 +8,7 @@ import { expandPrebuilt } from '../utils/prebuilt.js';
 import { resolveVehicleDesign } from '../utils/vehicleDesign.js';
 import audio from '../systems/audio.js';
 import juice from '../systems/juice.js';
-import fx from '../systems/fx.js';
+import fx, { crossedWaterline, clampPower, SPLASH_MAX_PER_FRAME, REF_SPLASH_SPEED } from '../systems/fx.js';
 import cam from '../systems/camera.js';
 import { findBeamSnap, nearestPointOnSegment } from '../utils/snapGeometry.js';
 import { GhostBeam } from '../ui/GhostBeam.js';
@@ -158,6 +158,8 @@ export class LevelScene extends Phaser.Scene {
     this.jointsGraphics  = this.add.graphics(); // front: anchor circles + joint pins + glow
     this.vehicleGraphics = this.add.graphics(); // vehicle chassis + visual wheels
     this._vehicleSprite  = null;
+    this._vehicleSplashed = false;
+    this._prevChassisY    = null;
     this._hoverTarget    = null;
     this.ghostGraphics   = this.add.graphics();
     this.snapGraphics    = this.add.graphics();
@@ -1150,7 +1152,8 @@ export class LevelScene extends Phaser.Scene {
       const life   = 1500 + Math.random() * 1000;
 
       this._debris.push({ x: cx, y: cy, w: pw, h: pieceH,
-        angle: segAngle, vx, vy, angVel, color, life, maxLife: life });
+        angle: segAngle, vx, vy, angVel, color, life, maxLife: life,
+        splashed: false });
     }
   }
 
@@ -1164,7 +1167,42 @@ export class LevelScene extends Phaser.Scene {
       d.y     += d.vy * delta;
       d.angle += d.angVel * delta;
       d.life  -= delta;
-      if (d.life <= 0 || d.y > waterY + 40) this._debris.splice(i, 1);
+      if (d.life <= 0 || d.y > waterY + 60) this._debris.splice(i, 1);
+    }
+  }
+
+  // Detect the vehicle/debris crossing the waterline (downward) and fire splashes.
+  // Runs every frame (test mode AND the post-test debris fall) so cascades splash.
+  _detectSplashes(delta) {
+    const waterY = this.level?.terrain?.waterY;
+    if (waterY == null || delta <= 0) return;
+    let budget = SPLASH_MAX_PER_FRAME;
+
+    // Vehicle chassis
+    const pos = physics.getVehicleChassisPosition();
+    if (pos) {
+      const prevY = this._prevChassisY;
+      if (prevY != null && !this._vehicleSplashed && crossedWaterline(prevY, pos.y, waterY)) {
+        const speed = (pos.y - prevY) / delta;            // px/ms, downward
+        fx.splash(pos.x, waterY, clampPower(speed, REF_SPLASH_SPEED));
+        this._vehicleSplashed = true;
+        budget--;
+      }
+      this._prevChassisY = pos.y;
+    } else {
+      this._prevChassisY = null;
+    }
+
+    // Debris pieces (scene-side plain objects; vy is px/ms)
+    for (const d of this._debris) {
+      if (budget <= 0) { console.warn('[fx] splash budget exhausted this frame'); break; }
+      if (d.splashed) continue;
+      const prevY = d.y - d.vy * delta;                   // where it was last frame
+      if (crossedWaterline(prevY, d.y, waterY)) {
+        fx.splash(d.x, waterY, clampPower(d.vy, REF_SPLASH_SPEED));
+        d.splashed = true;
+        budget--;
+      }
     }
   }
 
@@ -1258,6 +1296,10 @@ export class LevelScene extends Phaser.Scene {
         spawnY: spawn.y,
       };
       physics.spawnVehicle(vehicleConfig);
+      // fx.reset() is NOT called on this build->test transition, so clear per-run
+      // splash state explicitly for the newly spawned vehicle.
+      this._vehicleSplashed = false;
+      this._prevChassisY = null;
       // Frame the whole bridge for the test run instead of chasing the vehicle.
       // World == canvas (1280x720), so zoom 1 / scroll 0 keeps the full span in view.
       cam.follow(null);
@@ -1419,6 +1461,7 @@ export class LevelScene extends Phaser.Scene {
     // Debris continues falling across mode transitions so pieces finish even
     // after the test ends and the fail overlay appears.
     this._updateDebris(delta);
+    this._detectSplashes(delta);
     this._drawDebris();
 
     if (this.mode === 'test') {
