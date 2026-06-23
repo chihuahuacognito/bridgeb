@@ -8,6 +8,7 @@ import { expandPrebuilt } from '../utils/prebuilt.js';
 import { resolveVehicleDesign } from '../utils/vehicleDesign.js';
 import audio from '../systems/audio.js';
 import juice from '../systems/juice.js';
+import fx from '../systems/fx.js';
 import cam from '../systems/camera.js';
 import { findBeamSnap, nearestPointOnSegment } from '../utils/snapGeometry.js';
 import { GhostBeam } from '../ui/GhostBeam.js';
@@ -188,6 +189,7 @@ export class LevelScene extends Phaser.Scene {
 
     audio.attach(this);
     juice.attach(this);
+    fx.attach(this);
     cam.attach(this);
     tutorial.attach(this);
     if (this.level.prebuilt) this.rebuildBridge(); // creates constraints for prebuilt beams
@@ -299,6 +301,7 @@ export class LevelScene extends Phaser.Scene {
       physics.detach(this);
       audio.detach(this);
       juice.detach(this);
+      fx.detach(this);
       cam.detach(this);
       tutorial.detach(this);
       this._gui?.destroy();
@@ -772,6 +775,7 @@ export class LevelScene extends Phaser.Scene {
       this.cameras.main.scrollX = 0;
       this.cameras.main.scrollY = 0;
       juice.reset();
+      fx.reset();
       this.winOverlay?.destroy();  this.winOverlay  = null;
       this.failOverlay?.destroy(); this.failOverlay = null;
       this.testEndAt = 0;
@@ -1275,6 +1279,7 @@ export class LevelScene extends Phaser.Scene {
       this.mode = 'build';
       this.testEndAt = 0;
       juice.reset();
+      fx.reset();
       this.rebuildBridge();
       cam.follow(null);
       this.cameras.main.setZoom(1.0);
