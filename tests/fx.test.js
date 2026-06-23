@@ -3,9 +3,9 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import audio from '../src/systems/audio.js';
 import fx, {
-  crossedWaterline, clampPower, emitParams, dustParams,
+  crossedWaterline, clampPower, emitParams, dustParams, squashParams,
   REF_SPLASH_SPEED, SPLASH_MIN_DROPLETS, SPLASH_MAX_DROPLETS,
-  DUST_MIN, DUST_MAX, SPARK_COUNT,
+  DUST_MIN, DUST_MAX, SPARK_COUNT, SQUASH_MAX, VICTORY_COUNT,
 } from '../src/systems/fx.js';
 
 function mkAudioScene(existingKeys = []) {
@@ -118,13 +118,73 @@ describe('fx lifecycle', () => {
     expect(scene.add.graphics.mock.calls.length).toBe(callsAfterFirst); // no new gen
   });
 
-  it('creates splash, dust and spark emitters on attach and destroys them on detach', () => {
+  it('creates splash, dust, spark and victory emitters on attach and destroys them on detach', () => {
     const scene = mkFxScene();
     fx.attach(scene);
-    expect(scene.add.particles).toHaveBeenCalledTimes(3); // splash, dust, spark
+    expect(scene.add.particles).toHaveBeenCalledTimes(4); // splash, dust, spark, victory
     const emitters = scene.add.particles.mock.results.map((r) => r.value);
     fx.detach();
     for (const e of emitters) expect(e.destroy).toHaveBeenCalled();
+  });
+});
+
+describe('squashParams', () => {
+  it('returns neutral at power 0 and max squash/stretch at power 1', () => {
+    expect(squashParams(0)).toEqual({ sx: 1, sy: 1 });
+    const full = squashParams(1);
+    expect(full.sx).toBeCloseTo(1 + SQUASH_MAX);
+    expect(full.sy).toBeCloseTo(1 - SQUASH_MAX);
+  });
+  it('clamps out-of-range power', () => {
+    expect(squashParams(-1)).toEqual({ sx: 1, sy: 1 });
+    expect(squashParams(9).sx).toBeCloseTo(1 + SQUASH_MAX);
+  });
+});
+
+describe('fx.squash', () => {
+  beforeEach(() => fx.detach());
+
+  it('applies the squashed multiplier and schedules a restore tween to 1,1', () => {
+    const scene = mkFxScene();
+    fx.attach(scene);
+    fx.squash(1);
+    const s = fx.getSquash();
+    expect(s.sx).toBeCloseTo(1 + SQUASH_MAX);
+    expect(s.sy).toBeCloseTo(1 - SQUASH_MAX);
+    expect(scene.tweens.add).toHaveBeenCalledWith(
+      expect.objectContaining({ targets: s, sx: 1, sy: 1 }),
+    );
+  });
+
+  it('reset() restores neutral squash', () => {
+    const scene = mkFxScene();
+    fx.attach(scene);
+    fx.squash(1);
+    fx.reset();
+    expect(fx.getSquash()).toEqual({ sx: 1, sy: 1 });
+  });
+
+  it('getSquash is neutral and squash is a safe no-op when detached', () => {
+    fx.detach();
+    expect(fx.getSquash()).toEqual({ sx: 1, sy: 1 });
+    expect(() => fx.squash(1)).not.toThrow();
+  });
+});
+
+describe('fx.victory', () => {
+  beforeEach(() => fx.detach());
+
+  it('explodes the victory emitter with VICTORY_COUNT shards at the point', () => {
+    const scene = mkFxScene();
+    fx.attach(scene);
+    const victoryEmitter = scene.add.particles.mock.results[3].value; // splash,dust,spark,victory
+    fx.victory(640, 300);
+    expect(victoryEmitter.explode).toHaveBeenCalledWith(VICTORY_COUNT, 640, 300);
+  });
+
+  it('is a safe no-op when detached', () => {
+    fx.detach();
+    expect(() => fx.victory(0, 0)).not.toThrow();
   });
 });
 

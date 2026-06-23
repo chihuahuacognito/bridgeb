@@ -14,6 +14,8 @@ export const SPLASH_MAX_PER_FRAME = 4;   // cascade throttle (enforced at the ca
 export const DUST_MIN = 4;    // dust puff particles at landing power 0
 export const DUST_MAX = 14;   // dust puff particles at landing power 1
 export const SPARK_COUNT = 10; // shards per snap spark (fixed — snaps read uniform)
+export const SQUASH_MAX = 0.35;  // max squash/stretch fraction at landing power 1
+export const VICTORY_COUNT = 28; // shards in the victory fountain
 
 const DROPLET_KEY = 'fx-droplet';
 const SHARD_KEY   = 'fx-shard';
@@ -46,11 +48,20 @@ export function dustParams(power) {
   return { count };
 }
 
+// Pure: squash-and-stretch multipliers for a given impact power. Squashes
+// vertically (sy<1) and stretches horizontally (sx>1) to conserve apparent volume.
+export function squashParams(power) {
+  const k = SQUASH_MAX * clamp01(power);
+  return { sx: 1 + k, sy: 1 - k };
+}
+
 const fx = {
   _scene: null,
   _splashEmitter: null,
   _dustEmitter: null,
   _sparkEmitter: null,
+  _victoryEmitter: null,
+  _squash: { sx: 1, sy: 1 },  // consumed by LevelScene.redrawVehicle every frame
 
   attach(scene) {
     this._scene = scene;
@@ -91,15 +102,30 @@ const fx = {
       scale: { start: 1.0, end: 0.2 },
       maxParticles: 80,
     }).setDepth(6);
+
+    // Victory — celebratory upward shard fountain that arcs back under gravity.
+    this._victoryEmitter = scene.add.particles(0, 0, SHARD_KEY, {
+      emitting: false,
+      tint: [0xfff2a0, 0x9fd8ff, 0xff9ec2], // gold / blue / pink confetti
+      speed: { min: 180, max: 360 },
+      angle: { min: 250, max: 290 },         // upward cone
+      lifespan: { min: 600, max: 1100 },
+      gravityY: 600,
+      scale: { start: 1.2, end: 0.2 },
+      maxParticles: 120,
+    }).setDepth(6);
   },
 
   detach() {
     this._splashEmitter?.destroy();
     this._dustEmitter?.destroy();
     this._sparkEmitter?.destroy();
+    this._victoryEmitter?.destroy();
     this._splashEmitter = null;
     this._dustEmitter = null;
     this._sparkEmitter = null;
+    this._victoryEmitter = null;
+    this._squash = { sx: 1, sy: 1 };
     this._scene = null;
   },
 
@@ -108,6 +134,9 @@ const fx = {
     this._splashEmitter?.killAll?.();
     this._dustEmitter?.killAll?.();
     this._sparkEmitter?.killAll?.();
+    this._victoryEmitter?.killAll?.();
+    this._squash.sx = 1;
+    this._squash.sy = 1;
   },
 
   splash(x, y, power) {
@@ -127,6 +156,26 @@ const fx = {
     if (!this._scene || !this._sparkEmitter) return;
     this._sparkEmitter.explode(SPARK_COUNT, x, y);
   },
+
+  victory(x, y) {
+    if (!this._scene || !this._victoryEmitter) return;
+    this._victoryEmitter.explode(VICTORY_COUNT, x, y);
+  },
+
+  // Trigger a squash-and-stretch: snap to the squashed multiplier, then tween
+  // back to neutral. redrawVehicle reads getSquash() every frame and applies it
+  // (a sprite-scale tween would be stomped by redraw's setDisplaySize).
+  squash(power) {
+    if (!this._scene) return;
+    const { sx, sy } = squashParams(power);
+    this._squash.sx = sx;
+    this._squash.sy = sy;
+    this._scene.tweens.add({
+      targets: this._squash, sx: 1, sy: 1, duration: 200, ease: 'Back.out',
+    });
+  },
+
+  getSquash() { return this._squash; },
 
   _ripple(x, y, power) {
     const s = this._scene;
