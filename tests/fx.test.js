@@ -3,8 +3,9 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import audio from '../src/systems/audio.js';
 import fx, {
-  crossedWaterline, clampPower, emitParams,
+  crossedWaterline, clampPower, emitParams, dustParams,
   REF_SPLASH_SPEED, SPLASH_MIN_DROPLETS, SPLASH_MAX_DROPLETS,
+  DUST_MIN, DUST_MAX, SPARK_COUNT,
 } from '../src/systems/fx.js';
 
 function mkAudioScene(existingKeys = []) {
@@ -117,13 +118,72 @@ describe('fx lifecycle', () => {
     expect(scene.add.graphics.mock.calls.length).toBe(callsAfterFirst); // no new gen
   });
 
-  it('creates a splash emitter on attach and destroys it on detach', () => {
+  it('creates splash, dust and spark emitters on attach and destroys them on detach', () => {
     const scene = mkFxScene();
     fx.attach(scene);
-    expect(scene.add.particles).toHaveBeenCalledTimes(1);
-    const emitter = scene.add.particles.mock.results[0].value;
+    expect(scene.add.particles).toHaveBeenCalledTimes(3); // splash, dust, spark
+    const emitters = scene.add.particles.mock.results.map((r) => r.value);
     fx.detach();
-    expect(emitter.destroy).toHaveBeenCalled();
+    for (const e of emitters) expect(e.destroy).toHaveBeenCalled();
+  });
+});
+
+describe('dustParams', () => {
+  it('scales puff count from min (power 0) to max (power 1)', () => {
+    expect(dustParams(0).count).toBe(DUST_MIN);
+    expect(dustParams(1).count).toBe(DUST_MAX);
+    const mid = dustParams(0.5).count;
+    expect(mid).toBeGreaterThan(DUST_MIN);
+    expect(mid).toBeLessThan(DUST_MAX);
+  });
+  it('clamps out-of-range power', () => {
+    expect(dustParams(-1).count).toBe(DUST_MIN);
+    expect(dustParams(99).count).toBe(DUST_MAX);
+  });
+});
+
+describe('fx.dust', () => {
+  beforeEach(() => fx.detach());
+
+  it('explodes the dust emitter with a power-scaled count at the point', () => {
+    const scene = mkFxScene();
+    fx.attach(scene);
+    const dustEmitter = scene.add.particles.mock.results[1].value; // splash[0], dust[1], spark[2]
+    fx.dust(100, 540, 1);
+    expect(dustEmitter.explode).toHaveBeenCalledWith(DUST_MAX, 100, 540);
+  });
+
+  it('is a safe no-op when detached', () => {
+    fx.detach();
+    expect(() => fx.dust(0, 0, 1)).not.toThrow();
+  });
+});
+
+describe('fx.spark', () => {
+  beforeEach(() => fx.detach());
+
+  it('explodes the spark emitter with a fixed count at the snap midpoint', () => {
+    const scene = mkFxScene();
+    fx.attach(scene);
+    const sparkEmitter = scene.add.particles.mock.results[2].value;
+    fx.spark(300, 200);
+    expect(sparkEmitter.explode).toHaveBeenCalledWith(SPARK_COUNT, 300, 200);
+  });
+
+  it('is a safe no-op when detached', () => {
+    fx.detach();
+    expect(() => fx.spark(0, 0)).not.toThrow();
+  });
+});
+
+describe('fx.reset clears all emitters', () => {
+  beforeEach(() => fx.detach());
+  it('killAll on splash, dust and spark', () => {
+    const scene = mkFxScene();
+    fx.attach(scene);
+    const emitters = scene.add.particles.mock.results.map((r) => r.value);
+    fx.reset();
+    for (const e of emitters) expect(e.killAll).toHaveBeenCalled();
   });
 });
 
