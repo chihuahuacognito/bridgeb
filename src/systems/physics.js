@@ -36,6 +36,31 @@ const CAP_RADIUS = 5;
 // at ~40px, CRIT red at ~53px, snap at ~56px on a typical 150px half-span.
 let VISUAL_FULL_STRAIN = 0.05;
 
+// --- Hard-landing detection tuning (Matter body velocity, px/step) ---
+export const LANDING_VY_THRESHOLD = 6;   // min downward wheel vy to count as a hard landing
+export const REF_LANDING_VY       = 14;  // vy that reads as a full-power dust puff
+export const LANDING_COOLDOWN_MS  = 150; // per-wheel debounce
+
+const GROUND_LABELS = new Set(['terrain', 'rock', 'beam', 'beam-cap']);
+
+// Pure: is this body label a surface a wheel can land on?
+export function isGroundLabel(label) { return GROUND_LABELS.has(label); }
+
+// Pure: for a collision pair, which body ('A'|'B') is a vehicle wheel landing on
+// ground? null if it isn't a wheel↔ground pair (matched by LABEL, not category —
+// the chassis shares the vehicle collision category with wheels).
+export function classifyLandingPair(labelA, labelB) {
+  if (labelA === 'vehicle-wheel' && isGroundLabel(labelB)) return 'A';
+  if (labelB === 'vehicle-wheel' && isGroundLabel(labelA)) return 'B';
+  return null;
+}
+
+// Pure: normalize a downward landing vy to 0..1 against a reference.
+export function landingPower(vy, ref) {
+  if (vy <= 0 || ref <= 0) return 0;
+  return Math.min(1, vy / ref);
+}
+
 const physics = {
   _scene: null,
   _nodes: new Map(),       // jointId -> Matter.Body (small circle)
@@ -46,6 +71,8 @@ const physics = {
   _lastStaggerAt: 0,
   _cascadeActiveUntil: 0,
   _onSnapCallback: null,
+  _onHardLandingCallback: null,
+  _wheelLandAt: new Map(),   // wheel body.id -> last hard-landing fire ms (debounce)
 
   attach(scene) {
     this._scene = scene;
@@ -53,14 +80,20 @@ const physics = {
     // the live joint positions without being dynamic (and therefore rotatable).
     this._beforeUpdateCb = () => this._updateKinematicBeams();
     scene.matter.world.on('beforeupdate', this._beforeUpdateCb);
+    // First collision listener in the project — drives hard-landing dust.
+    this._collisionStartCb = (event) => this._handleCollisionStart(event);
+    scene.matter.world.on('collisionstart', this._collisionStartCb);
   },
 
   detach(_scene) {
-    if (this._scene && this._beforeUpdateCb && this._scene.matter?.world) {
-      this._scene.matter.world.off('beforeupdate', this._beforeUpdateCb);
+    if (this._scene && this._scene.matter?.world) {
+      if (this._beforeUpdateCb) this._scene.matter.world.off('beforeupdate', this._beforeUpdateCb);
+      if (this._collisionStartCb) this._scene.matter.world.off('collisionstart', this._collisionStartCb);
     }
     this._beforeUpdateCb = null;
+    this._collisionStartCb = null;
     this.reset();
+    this._wheelLandAt.clear();
     this._scene = null;
   },
 
@@ -94,6 +127,8 @@ const physics = {
     this._pendingSnaps.length = 0;
     this._lastStaggerAt = 0;
     this._cascadeActiveUntil = 0;
+    // Wheels are recreated each spawn, so stale body-ids must not linger.
+    this._wheelLandAt.clear();
   },
 
   // Build a small circle "joint node" body. Returns the body.
@@ -538,6 +573,28 @@ const physics = {
   },
 
   setOnSnap(cb) { this._onSnapCallback = cb; },
+
+  setOnHardLanding(cb) { this._onHardLandingCallback = cb; },
+
+  // collisionstart handler: fire a debounced hard-landing event when a vehicle
+  // wheel strikes a ground surface fast enough. Matches by label (not collision
+  // category — chassis shares the vehicle category with wheels).
+  _handleCollisionStart(event) {
+    const cb = this._onHardLandingCallback;
+    if (!cb || !event?.pairs) return;
+    const now = this._scene?.time?.now ?? 0;
+    for (const p of event.pairs) {
+      const which = classifyLandingPair(p.bodyA.label, p.bodyB.label);
+      if (!which) continue;
+      const wheel = which === 'A' ? p.bodyA : p.bodyB;
+      const vy = wheel.velocity.y;
+      if (vy <= LANDING_VY_THRESHOLD) continue;
+      const last = this._wheelLandAt.get(wheel.id);
+      if (last != null && now - last < LANDING_COOLDOWN_MS) continue;
+      this._wheelLandAt.set(wheel.id, now);
+      cb({ x: wheel.position.x, y: wheel.position.y, power: landingPower(vy, REF_LANDING_VY) });
+    }
+  },
 
   // Called once per tick (from LevelScene.update during test mode).
   evaluateStress(nowMs, timeScale = 1.0) {
