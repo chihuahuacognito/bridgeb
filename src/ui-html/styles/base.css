@@ -36,7 +36,12 @@ body {
   z-index: 100;
 }
 
-#ui-root.mode-test  #ui-sidebar { display: none; }
+/* Build-only chrome is hidden during a test run so it can't occlude the play
+   area. The bottom toolbar (and its size sub-row) sit over the canyon/waterline,
+   so leaving them up hides splashes and the vehicle's fall into the water. */
+#ui-root.mode-test  #ui-sidebar,
+#ui-root.mode-test  #ui-toolbar,
+#ui-root.mode-test  #ui-size-row { display: none; }
 #ui-root.mode-build #ui-hud     { display: none; }
 
 .label {
