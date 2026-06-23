@@ -200,6 +200,7 @@ export class LevelScene extends Phaser.Scene {
       const mx = (c.bodyA.position.x + c.bodyB.position.x) / 2;
       const my = (c.bodyA.position.y + c.bodyB.position.y) / 2;
       audio.stopCreak(c);
+      fx.spark(mx, my);   // yellow-white shard burst at the break point
 
       // First-break marker — set only on the first snap in this test run.
       if (!this._firstBreakPos) this._firstBreakPos = { x: mx, y: my };
@@ -207,6 +208,9 @@ export class LevelScene extends Phaser.Scene {
       this._spawnDebris(c);
       this.onBeamSnapped();
     });
+
+    // Tan dust puff when a wheel lands hard on a surface.
+    physics.setOnHardLanding((info) => fx.dust(info.x, info.y, info.power));
     this.winOverlay = null;
     this.failOverlay = null;
     this.testEndAt = 0; // when > 0, auto-return to build mode at this timestamp
