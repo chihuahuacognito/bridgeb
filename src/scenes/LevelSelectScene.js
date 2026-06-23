@@ -7,7 +7,7 @@ import { ALL_LEVELS, MODULES, MODULE_ORDER, menuEntries } from '../data/leveldat
 import { bus } from '../ui-html/bus.js';
 import {
   T, FONT_DISPLAY, FONT_BODY, PHASE_LABEL,
-  drawBlueprint, makeBrick, makeChip, popIn,
+  drawWorld, makeBrick, makeChip, popIn,
 } from './ui/menuTheme.js';
 
 const MODULE_FACE = { M1_GRAVITY: T.faces.sky, M2_SHAPES: T.faces.violet, M3_WEIGHT: T.faces.amber };
@@ -23,7 +23,7 @@ export class LevelSelectScene extends Phaser.Scene {
 
   create() {
     bus.emit('ui:screen', 'menu');
-    drawBlueprint(this);
+    drawWorld(this);
 
     const mod = MODULES[this.moduleId] ?? MODULES[MODULE_ORDER[0]];
     const face = MODULE_FACE[this.moduleId] ?? T.faces.sky;

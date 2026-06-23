@@ -3,7 +3,7 @@
 import Phaser from 'phaser';
 import { MODULES, MODULE_ORDER } from '../data/leveldata.js';
 import { bus } from '../ui-html/bus.js';
-import { T, FONT_DISPLAY, FONT_BODY, drawBlueprint, makeBrick, makeChip, popIn } from './ui/menuTheme.js';
+import { T, FONT_DISPLAY, FONT_BODY, drawWorld, makeBrick, makeChip, popIn } from './ui/menuTheme.js';
 
 const MODULE_FACE = { M1_GRAVITY: T.faces.sky, M2_SHAPES: T.faces.violet, M3_WEIGHT: T.faces.amber };
 
@@ -14,7 +14,7 @@ export class ModuleSelectScene extends Phaser.Scene {
 
   create() {
     bus.emit('ui:screen', 'menu');
-    drawBlueprint(this);
+    drawWorld(this);
 
     makeChip(this, { x: 84, y: 44, text: '← Back', fill: 0x24375c, onClick: () => this.scene.start('AppSelectScene') });
 
