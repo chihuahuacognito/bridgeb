@@ -73,6 +73,8 @@ const physics = {
   _onSnapCallback: null,
   _onHardLandingCallback: null,
   _wheelLandAt: new Map(),   // wheel body.id -> last hard-landing fire ms (debounce)
+  _vehicles: [],             // convoy: many live vehicles { id, chassis, wheelA/B, axleA/B, config }
+  _vehicleSeq: 0,            // monotonic vehicle id source
 
   attach(scene) {
     this._scene = scene;
@@ -111,10 +113,10 @@ const physics = {
         if (b.capA)    toRemove.push(b.capA);
         if (b.capB)    toRemove.push(b.capB);
       }
-      if (this._vehicle) {
-        toRemove.push(this._vehicle.chassis);
-        if (this._vehicle.wheelA) toRemove.push(this._vehicle.wheelA, this._vehicle.wheelB);
-        if (this._vehicle.axleA)  toRemove.push(this._vehicle.axleA,  this._vehicle.axleB);
+      for (const v of this._vehicles) {
+        toRemove.push(v.chassis);
+        if (v.wheelA) toRemove.push(v.wheelA, v.wheelB);
+        if (v.axleA)  toRemove.push(v.axleA,  v.axleB);
       }
       this._scene.matter.world.remove(toRemove);
     }
@@ -122,7 +124,8 @@ const physics = {
     this._beamConstraints.length = 0;
     this._canyonBodies.length = 0;
     this._bodySnapshots.clear();
-    this._vehicle = null;
+    this._vehicles.length = 0;
+    this._vehicleSeq = 0;
     this._pendingSnaps = this._pendingSnaps || [];
     this._pendingSnaps.length = 0;
     this._lastStaggerAt = 0;
@@ -368,29 +371,36 @@ const physics = {
     if (this._scene) this._scene.matter.world.engine.timing.timeScale = scale;
   },
 
-  freezeVehicle() {
-    if (!this._scene || !this._vehicle) return;
-    const { chassis, wheelA, wheelB } = this._vehicle;
-    this._scene.matter.body.setStatic(chassis, true);
-    if (wheelA) {
-      this._scene.matter.body.setStatic(wheelA, true);
-      this._scene.matter.body.setStatic(wheelB, true);
+  freezeVehicle(id) {
+    if (!this._scene) return;
+    const targets = id == null ? this._vehicles : this._vehicles.filter(v => v.id === id);
+    for (const { chassis, wheelA, wheelB } of targets) {
+      this._scene.matter.body.setStatic(chassis, true);
+      if (wheelA) {
+        this._scene.matter.body.setStatic(wheelA, true);
+        this._scene.matter.body.setStatic(wheelB, true);
+      }
     }
   },
 
-  removeVehicle() {
-    if (!this._scene || !this._vehicle) return;
-    const { chassis, wheelA, wheelB, axleA, axleB } = this._vehicle;
-    const toRemove = [chassis];
-    if (wheelA) toRemove.push(wheelA, wheelB);
-    if (axleA)  toRemove.push(axleA, axleB);
+  removeVehicle(id) {
+    if (!this._scene) return;
+    const v = this._vehicles.find(x => x.id === id);
+    if (!v) return;
+    const toRemove = [v.chassis];
+    if (v.wheelA) toRemove.push(v.wheelA, v.wheelB);
+    if (v.axleA)  toRemove.push(v.axleA, v.axleB);
     this._scene.matter.world.remove(toRemove);
-    this._vehicle = null;
+    this._vehicles = this._vehicles.filter(x => x.id !== id);
   },
 
   spawnVehicle(config) {
     if (!this._scene) return null;
     const { spawnAt } = config;
+    const id = config.id ?? this._vehicleSeq++;
+    // Unique negative group per vehicle: own chassis<->wheels never collide, but two
+    // DIFFERENT vehicles fall back to category/mask and so can rear-end each other.
+    const group = -(2 + this._vehicles.length);
     // Scene supplies spawnX/spawnY derived from the cliff geometry so the
     // vehicle starts back on the landmass and drives onto the bridge. Fall back
     // to the old fixed coords if a caller omits them.
@@ -408,7 +418,7 @@ const physics = {
       restitution: 0,
       friction: 0,
       chamfer: { radius: 6 },
-      collisionFilter: { category: 0x0001, mask: 0xFFFF & ~0x0002 & ~0x0004, group: -2 },
+      collisionFilter: { category: 0x0001, mask: 0xFFFF & ~0x0002 & ~0x0004, group },
     });
 
     // Wheels spawn at chassis-bottom corners so the zero-length axle constraints
@@ -427,7 +437,7 @@ const physics = {
       friction: 0.8,
       frictionStatic: 0.5,
       restitution: 0,
-      collisionFilter: { category: 0x0001, mask: 0xFFFF & ~0x0002, group: -2 },
+      collisionFilter: { category: 0x0001, mask: 0xFFFF & ~0x0002, group },
     };
     const wheelY  = spawnY + CHASSIS_H;
     const wheelA  = this._scene.matter.add.circle(spawnX + WHEEL_X, wheelY, WHEEL_R, wheelOpts);
@@ -439,65 +449,64 @@ const physics = {
     const axleB = this._scene.matter.add.constraint(chassis, wheelB, 0, 1,
       { pointA: { x: -WHEEL_X, y: CHASSIS_H }, pointB: { x: 0, y: 0 } });
 
-    this._vehicle = { chassis, wheelA, wheelB, axleA, axleB, config };
-    return this._vehicle;
+    const vehicle = { id, chassis, wheelA, wheelB, axleA, axleB, config };
+    this._vehicles.push(vehicle);
+    return vehicle;
   },
 
   driveVehicle() {
-    if (!this._vehicle) return;
-    const { chassis, config } = this._vehicle;
-    const dir      = config.spawnAt === 'left' ? 1 : -1;
-    const maxSpeed = config.driveSpeed ?? 3;
-    const gain     = config.driveForceGain ?? 0.001;
-    const vx       = chassis.velocity.x;
+    if (!this._scene) return;
+    // Drive every convoy vehicle. The force model (mass-scaled, push-only, with
+    // angular damping) is per-chassis; see the long note below for why it scales
+    // with mass — it's the real fix for the recurring "stuck at the first node" bug.
+    for (const { chassis, config } of this._vehicles) {
+      const dir      = config.spawnAt === 'left' ? 1 : -1;
+      const maxSpeed = config.driveSpeed ?? 3;
+      const gain     = config.driveForceGain ?? 0.001;
+      const vx       = chassis.velocity.x;
 
-    // Apply a proportional drive force toward target speed. Only push — never
-    // brake — so the car coasts freely on downslopes past maxSpeed. On steep
-    // uphills the force is insufficient to overcome gravity and the car stalls.
-    //
-    // Force scales with chassis mass so ACCELERATION (a = F/m) is mass-
-    // independent: a = gain * (maxSpeed - vx). Without this, the fixed-magnitude
-    // force barely exceeded wheel friction for the light car (terminal velocity
-    // collapsed to ~16 px/s vs the ~340 px/s target) and was even weaker for the
-    // heavier truck/tank — the car stalled on flat ground before reaching the
-    // bridge. This is the real cause of the recurring "stuck at the first node"
-    // bug; the overhang/cap/angular-damp fixes only ever patched the seam where
-    // the stall happened to be observed.
-    if (dir * vx < maxSpeed) {
-      this._scene.matter.body.applyForce(chassis, chassis.position, {
-        x: dir * (maxSpeed - dir * vx) * gain * chassis.mass,
-        y: 0,
-      });
+      // Proportional drive force toward target speed. Only push — never brake — so the
+      // car coasts on downslopes past maxSpeed; on steep uphills it stalls. Force scales
+      // with chassis mass so ACCELERATION (a = F/m) is mass-independent: a = gain *
+      // (maxSpeed - vx). A fixed-magnitude force barely beat wheel friction for the light
+      // car (terminal ~16 px/s vs ~340 target) and was weaker still for truck/tank.
+      if (dir * vx < maxSpeed) {
+        this._scene.matter.body.applyForce(chassis, chassis.position, {
+          x: dir * (maxSpeed - dir * vx) * gain * chassis.mass,
+          y: 0,
+        });
+      }
+
+      // Damp (not zero) angular velocity: hard-zeroing stopped the chassis tipping its
+      // nose at slope junctions and stalled it at every peak. 30% retained prevents spin
+      // while allowing enough rotation to navigate angle transitions.
+      this._scene.matter.body.setAngularVelocity(chassis, chassis.angularVelocity * 0.3);
     }
-
-    // Damp angular velocity rather than zeroing it. Hard-zeroing prevented the
-    // chassis from tipping its nose at slope junctions, causing it to stall
-    // at every peak node. Heavy damping (30% retained) still prevents spinning
-    // while allowing enough rotation to navigate angle transitions.
-    this._scene.matter.body.setAngularVelocity(chassis, chassis.angularVelocity * 0.3);
   },
 
   getDebugInfo() {
-    if (!this._vehicle) return null;
-    const chassis = this._vehicle.chassis;
+    // Debug HUD reports the lead vehicle.
+    const lead = this._vehicles[0];
+    if (!lead) return null;
+    const chassis = lead.chassis;
     const vx = chassis.velocity.x;
     const vy = chassis.velocity.y;
     const speed = Math.hypot(vx, vy);
     const angleDeg = chassis.angle * 180 / Math.PI;
     const angVelDeg = chassis.angularVelocity * 180 / Math.PI;
 
-    const dir = this._vehicle.config.spawnAt === 'left' ? 1 : -1;
-    const maxSpeed = this._vehicle.config.driveSpeed ?? 3;
-    const gain = this._vehicle.config.driveForceGain ?? 0.001;
+    const dir = lead.config.spawnAt === 'left' ? 1 : -1;
+    const maxSpeed = lead.config.driveSpeed ?? 3;
+    const gain = lead.config.driveForceGain ?? 0.001;
     const driveForce = (dir * vx < maxSpeed)
       ? dir * (maxSpeed - dir * vx) * gain * chassis.mass
       : 0;
 
     // Per-tick acceleration from previous frame's velocity
-    const prevVx = this._vehicle._dbgPrevVx ?? vx;
-    const prevVy = this._vehicle._dbgPrevVy ?? vy;
-    this._vehicle._dbgPrevVx = vx;
-    this._vehicle._dbgPrevVy = vy;
+    const prevVx = lead._dbgPrevVx ?? vx;
+    const prevVy = lead._dbgPrevVy ?? vy;
+    lead._dbgPrevVx = vx;
+    lead._dbgPrevVy = vy;
     const accelX = vx - prevVx;
     const accelY = vy - prevVy;
     const accel  = Math.hypot(accelX, accelY) * Math.sign(accelX * dir);
@@ -524,7 +533,15 @@ const physics = {
   },
 
   getVehicleChassisPosition() {
-    return this._vehicle ? this._vehicle.chassis.position : null;
+    return this._vehicles[0] ? this._vehicles[0].chassis.position : null;
+  },
+
+  // All live convoy vehicles, for scene-side win/fail measurement and drawing.
+  getVehicles() {
+    return this._vehicles.map(v => ({
+      id: v.id, position: v.chassis.position, angle: v.chassis.angle, config: v.config,
+      wheels: v.wheelA ? [v.wheelA.position, v.wheelB.position] : null,
+    }));
   },
 
   readStressNormalized(c) {
@@ -724,31 +741,35 @@ const physics = {
   // what makes the bridge flex and beams stress-test correctly now that beam
   // bodies are static (static bodies don't propagate contact forces to joints).
   applyVehicleLoad() {
-    if (!this._vehicle || !this._scene) return;
-    const chassis = this._vehicle.chassis;
-    const carX = chassis.position.x;
-    const carY = chassis.position.y;
+    if (!this._scene) return;
     const engine = this._scene.matter.world.engine;
-    const weightForce = chassis.mass * engine.gravity.y * (engine.gravity.scale ?? 0.001);
+    // Each convoy vehicle loads whichever beam segment it is currently over, so several
+    // vehicles on the deck flex the bridge cumulatively.
+    for (const v of this._vehicles) {
+      const chassis = v.chassis;
+      const carX = chassis.position.x;
+      const carY = chassis.position.y;
+      const weightForce = chassis.mass * engine.gravity.y * (engine.gravity.scale ?? 0.001);
 
-    for (const b of this._beamConstraints) {
-      if (!b.kinematic) continue;
-      const bodyA = b.constraint.bodyA;
-      const bodyB = b.constraint.bodyB;
-      const ax = bodyA.position.x, ay = bodyA.position.y;
-      const bx = bodyB.position.x, by = bodyB.position.y;
-      const dx = bx - ax, dy = by - ay;
-      const lenSq = dx * dx + dy * dy;
-      if (lenSq < 1) continue;
-      // Scalar projection of car position onto beam line → load-split parameter t
-      const t = Math.max(0, Math.min(1, ((carX - ax) * dx + (carY - ay) * dy) / lenSq));
-      // Only load beams the car is actually over (within half-car-width + overhang)
-      const closestX = ax + t * dx;
-      const closestY = ay + t * dy;
-      const distSq = (carX - closestX) ** 2 + (carY - closestY) ** 2;
-      if (distSq > 80 * 80) continue; // 80px proximity threshold
-      this._scene.matter.body.applyForce(bodyA, bodyA.position, { x: 0, y: (1 - t) * weightForce });
-      this._scene.matter.body.applyForce(bodyB, bodyB.position, { x: 0, y: t * weightForce });
+      for (const b of this._beamConstraints) {
+        if (!b.kinematic) continue;
+        const bodyA = b.constraint.bodyA;
+        const bodyB = b.constraint.bodyB;
+        const ax = bodyA.position.x, ay = bodyA.position.y;
+        const bx = bodyB.position.x, by = bodyB.position.y;
+        const dx = bx - ax, dy = by - ay;
+        const lenSq = dx * dx + dy * dy;
+        if (lenSq < 1) continue;
+        // Scalar projection of car position onto beam line → load-split parameter t
+        const t = Math.max(0, Math.min(1, ((carX - ax) * dx + (carY - ay) * dy) / lenSq));
+        // Only load beams the car is actually over (within half-car-width + overhang)
+        const closestX = ax + t * dx;
+        const closestY = ay + t * dy;
+        const distSq = (carX - closestX) ** 2 + (carY - closestY) ** 2;
+        if (distSq > 80 * 80) continue; // 80px proximity threshold
+        this._scene.matter.body.applyForce(bodyA, bodyA.position, { x: 0, y: (1 - t) * weightForce });
+        this._scene.matter.body.applyForce(bodyB, bodyB.position, { x: 0, y: t * weightForce });
+      }
     }
   },
 

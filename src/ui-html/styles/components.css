@@ -148,3 +148,20 @@
   color: #fff !important;
   transition: background 0.1s;
 }
+
+/* Convoy progress counter — player-facing "N/total across" during a convoy test run. */
+.convoy-progress {
+  position: absolute;
+  top: 84px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 30;
+  padding: 6px 16px;
+  font: 700 16px/1 system-ui, sans-serif;
+  letter-spacing: .02em;
+  color: var(--text-invert);
+  background: rgba(33, 49, 71, .82);
+  border-radius: var(--r-sm);
+  box-shadow: var(--shadow-card);
+  pointer-events: none;
+}

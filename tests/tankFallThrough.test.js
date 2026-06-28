@@ -21,8 +21,8 @@ function runDeckLoad({ density, steps = 320 }) {
   physics.buildBeam(L, M, ROAD);
   physics.buildBeam(M, R, ROAD);
 
-  physics.spawnVehicle({ density, driveSpeed: 0, spawnX: 580, spawnY: 372 });
-  const chassis = physics._vehicle.chassis;
+  const vehicle = physics.spawnVehicle({ density, driveSpeed: 0, spawnX: 580, spawnY: 372 });
+  const chassis = vehicle.chassis;
 
   let maxChassisY = -Infinity;
   for (let i = 0; i < steps; i++) {

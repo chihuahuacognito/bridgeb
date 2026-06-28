@@ -1,0 +1,6 @@
+level_id,type,weight,speed,acceleration
+L02,car,6,7,5
+L05,truck,6,4,5
+L08,truck,6,4,5
+L11,tank,8,2,5
+L12,truck,7,4,5

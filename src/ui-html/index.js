@@ -5,6 +5,7 @@ import { mountHud }     from './components/Hud.js';
 import { mountToolbar } from './components/Toolbar.js';
 import { mountSizeRow } from './components/SizeRow.js';
 import { mountResultModal } from './components/ResultModal.js';
+import { mountConvoyProgress } from './components/ConvoyProgress.js';
 
 export function mountUi(opts) {
   const root = document.getElementById('ui-root');
@@ -19,6 +20,7 @@ export function mountUi(opts) {
   mountToolbar(document.getElementById('ui-toolbar'));
   mountSizeRow(document.getElementById('ui-size-row'));
   mountResultModal(document.getElementById('ui-modals'));
+  mountConvoyProgress(root);
 
   bus.on('mode:changed', (mode) => {
     root.classList.remove('mode-build', 'mode-test');

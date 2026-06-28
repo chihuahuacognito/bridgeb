@@ -10,7 +10,9 @@
     "preview": "vite preview",
     "test": "vitest run",
     "test:watch": "vitest",
-    "lint": "eslint src tests"
+    "lint": "eslint src tests",
+    "export:levels": "node scripts/exportLevels.mjs",
+    "gen:levels": "node scripts/genLevels.mjs"
   },
   "keywords": [],
   "author": "",

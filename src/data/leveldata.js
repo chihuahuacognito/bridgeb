@@ -1,6 +1,10 @@
 // src/data/leveldata.js
 // Per spec §2 rule 3: level.vehicles is ALWAYS an array.
 // Spec: docs/superpowers/specs/2026-06-12-level-progression-design.md
+// CSV knobs: RAW_LEVELS below are the code defaults; ALL_LEVELS is RAW_LEVELS merged
+// with gdd/*.csv overrides (see docs/superpowers/specs/2026-06-28-convoy-and-csv-levels-design.md).
+import { mergeLevelKnobs } from './levelKnobs.js';
+import { LEVEL_OVERRIDES } from './levelOverrides.generated.js';
 
 // Visible water surface (matches the painted `background` asset's waterline, not
 // the world floor). Splash, sink-fade and debris cull all key off this. Tune in-app.
@@ -92,7 +96,12 @@ export const L01 = level({
   span: 1.6, budget: { road: 8 }, stressGlow: false,
   terrain: terrainPair(560, 720),
   anchors: spanAnchors(560, 720),
-  vehicles: [{ type: 'car', spawnAt: 'left' }],
+  // Convoy: three cars cross in sequence (matches gdd/levels.csv seed).
+  vehicles: [
+    { type: 'car', spawnAt: 'left' },
+    { type: 'car', spawnAt: 'left' },
+    { type: 'car', spawnAt: 'left' },
+  ],
   materials: { road: roadMat(['L']) },
   ui: { budgetMeter: false, delete: false, vehicleSelect: false, tools: ['road'] },
   tutorial: {
@@ -283,12 +292,19 @@ export const L10 = level({
   terrain: terrainPair(260, 1020),
   anchors: spanAnchors(260, 1020),
   rocks: [pillar('P1', 640, 530)],
-  vehicles: [{ type: 'truck', spawnAt: 'left' }],
+  // Convoy: two cars then a heavier truck cross in sequence ~1.4s apart, so the
+  // bridge must hold the whole column (several vehicles on the deck at once).
+  vehicles: [
+    { type: 'car',   spawnAt: 'left' },
+    { type: 'car',   spawnAt: 'left' },
+    { type: 'truck', spawnAt: 'left' },
+  ],
+  convoyGapMs: 1400,
   materials: { road: roadMat(), wood: woodMat() },
   ui: { vehicleSelect: false },
   tutorial: {
-    hint:    { icon: '🔺', text: 'Triangles plus the rock pillar — use everything you know.' },
-    success: { text: 'The longest crossing yet!' },
+    hint:    { icon: '🔺', text: 'Triangles plus the rock pillar — a whole convoy is coming!' },
+    success: { text: 'The whole convoy made it across!' },
   },
 });
 
@@ -399,7 +415,17 @@ export const DEV_STRESS = {
 
 export const LEVEL_ORDER = ['L01','L02','L03','L04','L05','L06','L07','L08','L09','L10','L11','L12'];
 
-export const ALL_LEVELS = { L01, L02, L03, L04, L05, L06, L07, L08, L09, L10, L11, L12, DEV_STRESS };
+// Code defaults (geometry + tuning), before any CSV knobs are applied.
+export const RAW_LEVELS = { L01, L02, L03, L04, L05, L06, L07, L08, L09, L10, L11, L12, DEV_STRESS };
+
+// Levels as the game sees them: code defaults overridden by gdd/*.csv knobs where present
+// (a level with no override row passes through unchanged). DEV_STRESS has no CSV row.
+export const ALL_LEVELS = Object.fromEntries(
+  Object.entries(RAW_LEVELS).map(([id, lv]) => {
+    const ov = LEVEL_OVERRIDES[id];
+    return [id, ov ? mergeLevelKnobs(lv, ov, { roadMat, woodMat }) : lv];
+  }),
+);
 
 export function menuEntries(allLevels, order) {
   return order.map(id => ({

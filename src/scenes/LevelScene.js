@@ -5,7 +5,8 @@ import { ALL_LEVELS, LEVEL_ORDER, moduleForLevel } from '../data/leveldata.js';
 import physics from '../systems/physics.js';
 import tutorial from '../systems/tutorial.js';
 import { expandPrebuilt } from '../utils/prebuilt.js';
-import { resolveVehicleDesign } from '../utils/vehicleDesign.js';
+import { resolveVehicleDesign, resolveConvoy } from '../utils/vehicleDesign.js';
+import { makeConvoyController } from '../systems/convoy.js';
 import audio from '../systems/audio.js';
 import juice from '../systems/juice.js';
 import fx, { crossedWaterline, clampPower, SPLASH_MAX_PER_FRAME, REF_SPLASH_SPEED } from '../systems/fx.js';
@@ -157,7 +158,11 @@ export class LevelScene extends Phaser.Scene {
     this.stressGraphics  = this.add.graphics(); // mid: stress overlay (test mode only)
     this.jointsGraphics  = this.add.graphics(); // front: anchor circles + joint pins + glow
     this.vehicleGraphics = this.add.graphics(); // vehicle chassis + visual wheels
-    this._vehicleSprite  = null;
+    this._vehicleSprites = new Map(); // vehicle id -> Phaser.Image (one per live vehicle)
+    this._convoy = null;            // makeConvoyController instance during a test run
+    this._crossed = new Set();      // ids of vehicles that have crossed the checkpoint
+    this._convoyConfigs = [];       // resolved design-scale configs for the run
+    this._spawnedIds = [];          // physics ids of vehicles spawned so far this run
     this._vehicleSplashed = false;
     this._prevChassisY    = null;
     this._hoverTarget    = null;
@@ -494,6 +499,64 @@ export class LevelScene extends Phaser.Scene {
     return { x, y: topY - 40 };
   }
 
+  _spawnConvoyVehicle(index, spawn) {
+    const cfg = this._convoyConfigs[index];
+    if (!cfg) return;
+    const vehicleConfig = {
+      type: cfg.type,
+      spawnAt: cfg.spawnAt,
+      ...vehicleParamsFromDesign({ weight: cfg.weight, speed: cfg.speed, acceleration: cfg.acceleration }),
+      spawnX: spawn.x,
+      spawnY: spawn.y,
+    };
+    const v = physics.spawnVehicle(vehicleConfig);
+    if (v) this._spawnedIds.push(v.id);
+  }
+
+  // Drive the convoy each test frame: spawn due vehicles, track crossings, despawn
+  // crossed-and-offscreen vehicles, emit progress, and resolve win/fail.
+  _tickConvoy() {
+    if (!this._convoy) return;
+    const live = physics.getVehicles();                 // [{ id, position, angle, config }]
+    const cpX = this._checkpointX;
+
+    // Persist crossings — a vehicle stays "crossed" even after it despawns off-screen.
+    for (const v of live) if (v.position.x >= cpX) this._crossed.add(v.id);
+
+    // States for ALL spawned ids: live ones use real x/y; retired ones report as crossed
+    // (x = Infinity, y = 0) so the win count stays correct after despawn.
+    const states = this._spawnedIds.map(id => {
+      const lv = live.find(l => l.id === id);
+      return lv
+        ? { id, x: lv.position.x, y: lv.position.y, crossed: this._crossed.has(id) }
+        : { id, x: Infinity, y: 0, crossed: this._crossed.has(id) };
+    });
+
+    const r = this._convoy.tick(this.time.now, states);
+
+    // Spawn any due vehicles (index 0 already spawned in toggleTest).
+    for (const { index } of r.toSpawn) {
+      if (index === 0) continue;
+      this._spawnConvoyVehicle(index, this._spawnPoint());
+    }
+
+    // Despawn vehicles that crossed and drove fully off the far side so they can't pile
+    // up and block followers. Their crossed flag is already in the Set.
+    const offHi = this.level.worldWidth + 120;
+    for (const v of live) {
+      if (this._crossed.has(v.id) && (v.position.x > offHi || v.position.x < -120)) {
+        physics.removeVehicle(v.id);
+        const spr = this._vehicleSprites?.get(v.id);
+        if (spr) { spr.destroy(); this._vehicleSprites.delete(v.id); }
+      }
+    }
+
+    bus.emit('convoy:progress', { crossed: r.crossedCount, total: r.total });
+
+    if (r.failed && !this.failOverlay && !this.winOverlay) { cam.follow(null); this.showFail(); }
+    else if (r.won && !this.winOverlay && !this.failOverlay) { this.showWin(); }
+  }
+
   // Visual road strip along each cliff top so the vehicle reads as driving on a
   // proper road over the landmass. Purely cosmetic — the terrain body is the
   // actual collision surface.
@@ -808,7 +871,7 @@ export class LevelScene extends Phaser.Scene {
     this.snapTarget = null;
     // Clear all graphics layers.
     this.vehicleGraphics?.clear();
-    this._vehicleSprite?.setVisible(false);
+    this._clearVehicleSprites();
     this.stressGraphics.clear();
     this.ghostGraphics.clear();
     this.snapGraphics.clear();
@@ -1297,21 +1360,32 @@ export class LevelScene extends Phaser.Scene {
       physics.setTimeScale(1.0);
       physics.setGravity(this._cheatParams.gravityY);
       physics.setRunnerEnabled(true);   // start simulating
-      // Cheat panel is the live source of truth for the vehicle — seeded from
-      // the resolved design at create(), then editable via the GUI sliders.
-      const design = {
-        weight:       this._cheatParams.weight,
-        speed:        this._cheatParams.speed,
-        acceleration: this._cheatParams.acceleration,
-      };
+      // Resolve the convoy. Locked levels (ui.vehicleSelect:false) run the level's vehicle
+      // list, each with its own design. Unlocked/sandbox levels (e.g. DEV_STRESS) run a
+      // single vehicle driven live by the cheat panel — so the sliders keep working there.
+      const locked = this.level.ui?.vehicleSelect === false;
+      if (locked) {
+        this._convoyConfigs = resolveConvoy(this.level, VEHICLE_PRESETS, this._vehiclePreset);
+      } else {
+        this._convoyConfigs = [{
+          type: this._vehiclePreset,
+          spawnAt: this.level.vehicles[0]?.spawnAt ?? 'left',
+          weight:       this._cheatParams.weight,
+          speed:        this._cheatParams.speed,
+          acceleration: this._cheatParams.acceleration,
+        }];
+      }
+      this._crossed = new Set();
+      this._spawnedIds = [];
       const spawn = this._spawnPoint();
-      const vehicleConfig = {
-        ...this.level.vehicles[0], // spec §2 rule 3: always an array
-        ...vehicleParamsFromDesign(design),
-        spawnX: spawn.x,
-        spawnY: spawn.y,
-      };
-      physics.spawnVehicle(vehicleConfig);
+      this._convoy = makeConvoyController({
+        count: this._convoyConfigs.length,
+        gapMs: this.level.convoyGapMs ?? 1500,
+        checkpointX: this._checkpointX,
+        worldHeight: this.level.worldHeight,
+      });
+      this._spawnConvoyVehicle(0, spawn);   // vehicle 0 spawns immediately
+      bus.emit('convoy:progress', { crossed: 0, total: this._convoyConfigs.length });
       // fx.reset() is NOT called on this build->test transition, so clear per-run
       // splash state explicitly for the newly spawned vehicle.
       this._vehicleSplashed = false;
@@ -1346,7 +1420,7 @@ export class LevelScene extends Phaser.Scene {
       physics.setRunnerEnabled(false);
       this._setBlueprintMode();
       this.vehicleGraphics?.clear();
-      this._vehicleSprite?.setVisible(false);
+      this._clearVehicleSprites();
       this.stressGraphics.clear();
       this._jointStrain = null;
       this._firstBreakPos = null;
@@ -1356,6 +1430,10 @@ export class LevelScene extends Phaser.Scene {
       this.redrawJoints(new Map());
       this.winOverlay?.destroy(); this.winOverlay = null;
       this.failOverlay?.destroy(); this.failOverlay = null;
+      this._convoy = null;
+      this._crossed = new Set();
+      this._spawnedIds = [];
+      this._convoyConfigs = [];
       const _freshB = this._freshBudget();
       this._budgetRoad = _freshB.road;
       this._budgetWood = _freshB.wood;
@@ -1505,8 +1583,7 @@ export class LevelScene extends Phaser.Scene {
       this.redrawSnapMarkers();
       this.redrawVehicle();
       this._updateDebugHud();
-      this.checkWin();
-      this.checkFall();
+      this._tickConvoy();
       // Auto-return to build mode after the result has been on screen ~1.5s.
       // Wipe the player's design first so they start each round with a clean
       // level (manual RESET, by contrast, keeps the design intact).
@@ -1580,18 +1657,6 @@ export class LevelScene extends Phaser.Scene {
     this.redrawJoints(new Map());
   }
 
-  // Chassis below the world bottom → treat as fail and stop the camera so
-  // the overlay stays in view. Prevents infinite scroll when the car drives
-  // off an edge or the bridge gives way.
-  checkFall() {
-    const pos = physics.getVehicleChassisPosition();
-    if (!pos) return;
-    if (pos.y > this.level.worldHeight + 40 && !this.failOverlay && !this.winOverlay) {
-      cam.follow(null);
-      this.showFail();
-    }
-  }
-
   updateCreakAudio() {
     for (const { constraint } of physics._beamConstraints) {
       const stress = physics.readStressSmoothed(constraint);
@@ -1641,65 +1706,66 @@ export class LevelScene extends Phaser.Scene {
     this.testEndAt = this.time.now + 1500;
   }
 
-  checkWin() {
-    const pos = physics.getVehicleChassisPosition();
-    if (!pos) return;
-    // Win when the vehicle reaches the checkpoint partway across the far
-    // landmass — not merely the near edge of the right cliff.
-    if (pos.x >= this._checkpointX && !this.winOverlay && !this.failOverlay) {
-      this.showWin();
-    }
+
+  _clearVehicleSprites() {
+    for (const spr of this._vehicleSprites.values()) spr.destroy();
+    this._vehicleSprites.clear();
   }
 
   redrawVehicle() {
     this.vehicleGraphics.clear();
-    const v = physics._vehicle;
-    if (!v) {
-      this._vehicleSprite?.setVisible(false);
-      return;
-    }
-    const c = v.chassis;
-    const cx = c.position.x, cy = c.position.y;
-    const key = this._vehiclePreset;
+    const live = physics.getVehicles();   // [{ id, position, angle, config, wheels }]
+    const seen = new Set();
 
-    // Sink-fade: once the chassis drops past the waterline the vehicle fades out
-    // over SINK_FADE_PX, reading as it sinking under the river surface.
+    // Sink-fade: once a chassis drops past the waterline it fades out over SINK_FADE_PX,
+    // reading as it sinking under the river surface.
     const waterY = this.level?.terrain?.waterY;
     const SINK_FADE_PX = 90;
-    const submerge = waterY == null ? -1 : cy - waterY;
-    const sinkAlpha = submerge <= 0 ? 1 : Math.max(0, 1 - submerge / SINK_FADE_PX);
-
     // Squash-and-stretch multiplier (set by fx on impact, tweens back to 1,1).
     const { sx, sy } = fx.getSquash();
 
-    if (this.textures.exists(key) && assets.has(key)) {
-      if (!this._vehicleSprite) {
-        this._vehicleSprite = this.add.image(cx, cy, key).setOrigin(0.5, 0.5).setDepth(2).setDisplaySize(120, 72);
-      }
-      this._vehicleSprite.setTexture(key).setVisible(true).setAlpha(sinkAlpha)
-        .setDisplaySize(120 * sx, 72 * sy).setPosition(cx, cy).setRotation(c.angle);
-      return;
-    }
-    this._vehicleSprite?.setVisible(false);
+    for (const v of live) {
+      seen.add(v.id);
+      const key = v.config.type;
+      const cx = v.position.x, cy = v.position.y, angle = v.angle;
+      const submerge = waterY == null ? -1 : cy - waterY;
+      const sinkAlpha = submerge <= 0 ? 1 : Math.max(0, 1 - submerge / SINK_FADE_PX);
 
-    // Procedural fallback — Poly Bridge style rectangle chassis + wheels.
-    this.vehicleGraphics.fillStyle(0x222222, sinkAlpha);
-    if (v.wheelA) {
-      this.vehicleGraphics.fillCircle(v.wheelA.position.x, v.wheelA.position.y, 10);
-      this.vehicleGraphics.fillCircle(v.wheelB.position.x, v.wheelB.position.y, 10);
+      if (this.textures.exists(key) && assets.has(key)) {
+        let spr = this._vehicleSprites.get(v.id);
+        if (!spr) {
+          spr = this.add.image(cx, cy, key).setOrigin(0.5, 0.5).setDepth(2).setDisplaySize(120, 72);
+          this._vehicleSprites.set(v.id, spr);
+        }
+        spr.setTexture(key).setVisible(true).setAlpha(sinkAlpha)
+          .setDisplaySize(120 * sx, 72 * sy).setPosition(cx, cy).setRotation(angle);
+        continue;
+      }
+
+      // Procedural fallback — Poly Bridge style rectangle chassis + wheels.
+      this.vehicleGraphics.fillStyle(0x222222, sinkAlpha);
+      if (v.wheels) {
+        this.vehicleGraphics.fillCircle(v.wheels[0].x, v.wheels[0].y, 10);
+        this.vehicleGraphics.fillCircle(v.wheels[1].x, v.wheels[1].y, 10);
+      }
+      const cos = Math.cos(angle), sin = Math.sin(angle);
+      const hw = 40 * sx, hh = 12 * sy;
+      const corners = [
+        { x: cx - hw * cos + hh * sin, y: cy - hw * sin - hh * cos },
+        { x: cx + hw * cos + hh * sin, y: cy + hw * sin - hh * cos },
+        { x: cx + hw * cos - hh * sin, y: cy + hw * sin + hh * cos },
+        { x: cx - hw * cos - hh * sin, y: cy - hw * sin + hh * cos },
+      ];
+      this.vehicleGraphics.fillStyle(0xf08c1a, sinkAlpha);
+      this.vehicleGraphics.fillPoints(corners, true);
+      this.vehicleGraphics.lineStyle(2, 0x331a00, sinkAlpha);
+      this.vehicleGraphics.strokePoints(corners, true);
     }
-    const cos = Math.cos(c.angle), sin = Math.sin(c.angle);
-    const hw = 40 * sx, hh = 12 * sy;
-    const corners = [
-      { x: cx - hw * cos + hh * sin, y: cy - hw * sin - hh * cos },
-      { x: cx + hw * cos + hh * sin, y: cy + hw * sin - hh * cos },
-      { x: cx + hw * cos - hh * sin, y: cy + hw * sin + hh * cos },
-      { x: cx - hw * cos - hh * sin, y: cy - hw * sin + hh * cos },
-    ];
-    this.vehicleGraphics.fillStyle(0xf08c1a, sinkAlpha);
-    this.vehicleGraphics.fillPoints(corners, true);
-    this.vehicleGraphics.lineStyle(2, 0x331a00, sinkAlpha);
-    this.vehicleGraphics.strokePoints(corners, true);
+
+    // Destroy sprites whose vehicle is gone (despawned after crossing, or run ended).
+    for (const [id, spr] of this._vehicleSprites) {
+      if (!seen.has(id)) { spr.destroy(); this._vehicleSprites.delete(id); }
+    }
   }
 
   _handleSave() {
