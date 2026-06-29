@@ -74,6 +74,11 @@
 .budget-chip--flash { animation: budget-flash 0.35s ease; }
 @keyframes budget-flash { 0%,100% { transform: scale(1); } 40% { transform: scale(1.06); box-shadow: 0 0 0 3px var(--chip-accent), var(--shadow-card); } }
 
+/* Campaign position panel — top-left, in the slot the editor logo used to hold. */
+.level-counter { width: 160px; height: 64px; padding: 0 18px; display: flex; flex-direction: column; justify-content: center; line-height: 1; background: var(--panel); border-radius: var(--r-md); box-shadow: 0 3px 0 var(--border), var(--shadow-card); border-top: 3px solid var(--blue); }
+.level-counter small { font-size: 11px; color: var(--blue); letter-spacing: 0.08em; text-transform: uppercase; opacity: 0.85; }
+.level-counter .level-counter-num { font-size: 26px; font-weight: 700; color: var(--text); margin-top: 4px; }
+
 /* Vehicle card row. */
 .vehicle-row { display: flex; align-items: center; gap: 8px; padding: 8px 10px; cursor: pointer; border-radius: var(--r-md); }
 .vehicle-row[data-selected="true"] { outline: 2px solid var(--blue); outline-offset: -2px; box-shadow: inset 0 0 0 4px rgba(45,156,219,.08); }

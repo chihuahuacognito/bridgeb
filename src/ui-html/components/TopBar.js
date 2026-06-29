@@ -1,12 +1,13 @@
 import { bus } from '../bus.js';
-import { Logo } from './Logo.js';
 import { IconButton } from './IconButton.js';
 import { CtaButton } from './CtaButton.js';
 import { BudgetChip } from './BudgetChip.js';
+import { LevelCounter } from './LevelCounter.js';
 import * as I from '../icons/index.js';
 
 export function mountTopBar(root) {
-  root.appendChild(Logo());
+  // Campaign position panel sits where the editor logo used to, top-left.
+  root.appendChild(LevelCounter());
 
   root.appendChild(IconButton({
     icon: I.undo(), label: 'UNDO',

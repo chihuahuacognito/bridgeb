@@ -309,6 +309,10 @@ export class LevelScene extends Phaser.Scene {
     // Initial sync — listeners are now wired in mountUi() (runs before Phaser).
     bus.emit('ui:screen', 'level');
     bus.emit('ui:config', this._ui);
+    const _levelIdx = LEVEL_ORDER.indexOf(this.levelId);
+    bus.emit('level:info', _levelIdx >= 0
+      ? { index: _levelIdx + 1, total: LEVEL_ORDER.length }
+      : {});
     this._updateBudgetDisplay();
     bus.emit('vehicle:active', this._vehiclePreset);
     bus.emit('mode:changed', 'build');
