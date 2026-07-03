@@ -67,10 +67,10 @@ describe('parseLevelsCsv', () => {
     const out = parseLevelsCsv(csv);
     expect(out.L10.vehicles).toEqual(['car', 'car', 'truck']);
     expect(out.L10.convoyGapMs).toBe(1400);
-    expect(out.L10.budget).toEqual({ road: 48, wood: 32 });
+    expect(out.L10.budget).toEqual({ total: 80 }); // 48 road + 32 wood, single pool
     expect(out.L10.roadSizes).toEqual(['S', 'M', 'L', 'XL']);
     expect(out.L10.ui).toEqual({ vehicleSelect: false, tools: ['road', 'beam'] }); // blanks omitted
-    expect(out.L01.budget).toEqual({ road: 8 });            // wood blank → omitted
+    expect(out.L01.budget).toEqual({ total: 8 });           // wood blank → total = road
     expect(out.L01.ui).toEqual({ vehicleSelect: false, delete: false, budgetMeter: false, tools: ['road'] });
     expect(out.L01.stressGlow).toBe(false);
   });

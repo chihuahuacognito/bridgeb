@@ -417,6 +417,11 @@ export const LEVEL_ORDER = ['L01','L02','L03','L04','L05','L06','L07','L08','L09
 // Code defaults (geometry + tuning), before any CSV knobs are applied.
 export const RAW_LEVELS = { L01, L02, L03, L04, L05, L06, L07, L08, L09, L10, L11, L12, DEV_STRESS };
 
+// Single budget pool: collapse every level's legacy { road, wood } budget into
+// one { total } (in place, so RAW_LEVELS and ALL_LEVELS stay in agreement).
+const toTotalBudget = (b) => (b == null ? b : { total: b.total ?? ((b.road ?? 0) + (b.wood ?? 0)) });
+for (const lv of Object.values(RAW_LEVELS)) if (lv.budget) lv.budget = toTotalBudget(lv.budget);
+
 // Levels as the game sees them: code defaults overridden by gdd/*.csv knobs where present
 // (a level with no override row passes through unchanged). DEV_STRESS has no CSV row.
 export const ALL_LEVELS = Object.fromEntries(

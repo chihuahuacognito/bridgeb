@@ -7,7 +7,7 @@ export const LEVEL_OVERRIDES = {
     ],
     "spawnAt": "left",
     "budget": {
-      "road": 8
+      "total": 8
     },
     "roadSizes": [
       "L"
@@ -33,8 +33,7 @@ export const LEVEL_OVERRIDES = {
     ],
     "spawnAt": "left",
     "budget": {
-      "road": 40,
-      "wood": 16
+      "total": 56
     },
     "roadSizes": [
       "M",
@@ -73,8 +72,7 @@ export const LEVEL_OVERRIDES = {
     ],
     "spawnAt": "left",
     "budget": {
-      "road": 36,
-      "wood": 24
+      "total": 60
     },
     "roadSizes": [
       "S",
@@ -104,8 +102,7 @@ export const LEVEL_OVERRIDES = {
     ],
     "spawnAt": "left",
     "budget": {
-      "road": 22,
-      "wood": 14
+      "total": 36
     },
     "roadSizes": [
       "S",
@@ -134,8 +131,7 @@ export const LEVEL_OVERRIDES = {
     ],
     "spawnAt": "left",
     "budget": {
-      "road": 20,
-      "wood": 12
+      "total": 32
     },
     "roadSizes": [
       "S",
@@ -174,8 +170,7 @@ export const LEVEL_OVERRIDES = {
     ],
     "spawnAt": "left",
     "budget": {
-      "road": 23,
-      "wood": 15
+      "total": 38
     },
     "roadSizes": [
       "L"
@@ -200,8 +195,7 @@ export const LEVEL_OVERRIDES = {
     ],
     "spawnAt": "left",
     "budget": {
-      "road": 36,
-      "wood": 24
+      "total": 60
     },
     "roadSizes": [
       "S",
@@ -230,8 +224,7 @@ export const LEVEL_OVERRIDES = {
     ],
     "spawnAt": "left",
     "budget": {
-      "road": 33,
-      "wood": 22
+      "total": 55
     },
     "roadSizes": [
       "S",
@@ -267,8 +260,7 @@ export const LEVEL_OVERRIDES = {
     ],
     "spawnAt": "left",
     "budget": {
-      "road": 13,
-      "wood": 9
+      "total": 22
     },
     "roadSizes": [
       "S",
@@ -300,8 +292,7 @@ export const LEVEL_OVERRIDES = {
     "spawnAt": "left",
     "convoyGapMs": 1400,
     "budget": {
-      "road": 48,
-      "wood": 32
+      "total": 80
     },
     "roadSizes": [
       "S",
@@ -330,8 +321,7 @@ export const LEVEL_OVERRIDES = {
     ],
     "spawnAt": "left",
     "budget": {
-      "road": 36,
-      "wood": 24
+      "total": 60
     },
     "roadSizes": [
       "S",
@@ -367,8 +357,7 @@ export const LEVEL_OVERRIDES = {
     ],
     "spawnAt": "left",
     "budget": {
-      "road": 54,
-      "wood": 36
+      "total": 90
     },
     "roadSizes": [
       "S",

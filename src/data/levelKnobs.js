@@ -70,11 +70,8 @@ export function parseLevelsCsv(text) {
 
     const br = num(at(cells, 'budget_road'));
     const bw = num(at(cells, 'budget_wood'));
-    if (br != null || bw != null) {
-      k.budget = {};
-      if (br != null) k.budget.road = br;
-      if (bw != null) k.budget.wood = bw;
-    }
+    // Single budget pool: the two legacy columns are summed into one total.
+    if (br != null || bw != null) k.budget = { total: (br ?? 0) + (bw ?? 0) };
 
     const rs = list(at(cells, 'road_sizes')); if (rs) k.roadSizes = rs;
     const ws = list(at(cells, 'wood_sizes')); if (ws) k.woodSizes = ws;
@@ -128,8 +125,8 @@ export function serializeLevelsCsv(rawLevels, ids) {
       lv.vehicles.map(v => v.type).join(';'),
       lv.vehicles[0]?.spawnAt ?? 'left',
       str(lv.convoyGapMs),
-      str(lv.budget?.road),
-      str(lv.budget?.wood),
+      str(lv.budget?.total),
+      '',
       lv.materials?.road ? Object.keys(lv.materials.road.blocks).join(';') : '',
       lv.materials?.wood ? Object.keys(lv.materials.wood.blocks).join(';') : '',
       ui.tools ? ui.tools.join(';') : '',

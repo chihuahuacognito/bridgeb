@@ -1,17 +1,16 @@
 import { bus } from '../bus.js';
-import { road as roadIcon, beam as beamIcon } from '../icons/index.js';
 
-export function BudgetChip({ type }) {
-  const isRoad = type === 'road';
-
+// Single total-budget chip. Every material spends from one pool; this shows the
+// remaining total and flashes when a placement is (or can't be) afforded.
+export function BudgetChip() {
   const root = document.createElement('div');
-  root.className = `budget-chip budget-chip--${type}`;
+  root.className = 'budget-chip budget-chip--total';
 
   const text = document.createElement('div');
   text.className = 'budget-text';
 
   const label = document.createElement('small');
-  label.textContent = isRoad ? 'ROAD' : 'WOOD';
+  label.textContent = 'BUDGET';
 
   const num = document.createElement('div');
   num.className = 'budget-num';
@@ -19,22 +18,21 @@ export function BudgetChip({ type }) {
 
   text.append(label, num);
 
-  const iconWrap = document.createElement('div');
-  iconWrap.innerHTML = isRoad ? roadIcon() : beamIcon();
-  const iconSvg = iconWrap.querySelector('svg');
-  if (iconSvg) iconSvg.classList.add('budget-icon');
+  const icon = document.createElement('div');
+  icon.className = 'budget-icon';
+  icon.innerHTML =
+    '<svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">' +
+    '<circle cx="12" cy="12" r="9" fill="currentColor" opacity="0.9"/>' +
+    '<path d="M12 7.2v9.6M9.6 9.4c0-1.1 1.05-1.6 2.4-1.6s2.4.6 2.4 1.6-1.05 1.5-2.4 1.8-2.4.8-2.4 1.9 1.05 1.6 2.4 1.6 2.4-.6 2.4-1.5" ' +
+    'stroke="#fff" stroke-width="1.5" stroke-linecap="round"/></svg>';
 
-  root.append(text, iconSvg ?? iconWrap);
+  root.append(text, icon);
 
   bus.on('budget:update', (payload) => {
-    const val = isRoad ? payload.road : payload.wood;
-    if (!isRoad) root.style.display = val == null ? 'none' : '';
-    num.textContent = val != null ? String(val) : '0';
+    num.textContent = payload?.total != null ? String(payload.total) : '0';
   });
 
-  bus.on('budget:flash', (materialType) => {
-    const matches = isRoad ? materialType === 'road' : materialType === 'beam';
-    if (!matches) return;
+  bus.on('budget:flash', () => {
     root.classList.add('budget-chip--flash');
     root.addEventListener('animationend', () => root.classList.remove('budget-chip--flash'), { once: true });
   });

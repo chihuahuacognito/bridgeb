@@ -29,10 +29,8 @@ export function mountTopBar(root) {
   });
   root.appendChild(cta);
 
-  const roadChip = BudgetChip({ type: 'road' });
-  const woodChip = BudgetChip({ type: 'wood' });
-  root.appendChild(roadChip);
-  root.appendChild(woodChip);
+  const budgetChip = BudgetChip();
+  root.appendChild(budgetChip);
 
   const saveBtn = IconButton({
     icon: I.save(), label: 'SAVE',
@@ -55,11 +53,7 @@ export function mountTopBar(root) {
 
   bus.on('ui:config', (cfg) => {
     const showBudget = cfg?.budgetMeter !== false;
-    roadChip.style.display = showBudget ? '' : 'none';
-    // When budget is hidden, also hide wood. When budget is visible,
-    // the budget:update event controls wood chip visibility per-level.
-    if (!showBudget) woodChip.style.display = 'none';
-    else woodChip.style.display = '';
+    budgetChip.style.display = showBudget ? '' : 'none';
   });
 
   bus.on('layout:saved', () => {

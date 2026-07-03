@@ -71,6 +71,7 @@
 .budget-chip .budget-icon { width: 26px; height: 26px; flex: 0 0 auto; color: var(--chip-accent, var(--text-soft)); opacity: 0.7; }
 .budget-chip--road { --chip-accent: #5a5a72; }
 .budget-chip--wood { --chip-accent: #c47a15; }
+.budget-chip--total { --chip-accent: var(--green); }
 .budget-chip--flash { animation: budget-flash 0.35s ease; }
 @keyframes budget-flash { 0%,100% { transform: scale(1); } 40% { transform: scale(1.06); box-shadow: 0 0 0 3px var(--chip-accent), var(--shadow-card); } }
 

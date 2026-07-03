@@ -42,7 +42,7 @@ describe('every progression level', () => {
         expect(l.id).toBe(id);
         expect(typeof l.title).toBe('string');
         expect(PHASES).toContain(l.phase);
-        expect(l.budget.road).toBeGreaterThan(0);
+        expect(l.budget.total).toBeGreaterThan(0);
         expect(l.worldWidth).toBe(1280);
         expect(l.worldHeight).toBe(720);
         expect(l.terrain.left.verts.length).toBeGreaterThanOrEqual(3);
@@ -112,7 +112,7 @@ describe('intended-failure budget direction (spec: L05/L06)', () => {
     const gap = right.x - left.x;
     const lBlock = l.materials.road.blocks.L;
     const oneDeck = Math.ceil(gap / lBlock.length) * lBlock.cost;
-    expect(l.budget.road).toBeLessThan(oneDeck * 2);
+    expect(l.budget.total).toBeLessThan(oneDeck * 2);
   });
 
   it('L06 budget cannot afford doubling the prebuilt deck in road', () => {
@@ -121,7 +121,7 @@ describe('intended-failure budget direction (spec: L05/L06)', () => {
       .filter(b => b.material === 'road')
       .reduce((s, b) => s + l.materials.road.blocks[b.size].cost, 0);
     // budget is net-of-prebuilt at runtime; gross budget minus prebuilt must be < a second deck
-    expect(l.budget.road - deckCost).toBeLessThan(deckCost);
+    expect(l.budget.total - deckCost).toBeLessThan(deckCost);
   });
 });
 
