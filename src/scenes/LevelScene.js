@@ -2,6 +2,7 @@
 import Phaser from 'phaser';
 import GUI from 'lil-gui';
 import { ALL_LEVELS, LEVEL_ORDER, moduleForLevel } from '../data/leveldata.js';
+import { MATERIALS, ROAD_MATERIALS, BEAM_MATERIALS, resolveMaterial, tilePrice } from '../data/materials.js';
 import physics from '../systems/physics.js';
 import tutorial from '../systems/tutorial.js';
 import { expandPrebuilt } from '../utils/prebuilt.js';
@@ -1787,9 +1788,9 @@ export class LevelScene extends Phaser.Scene {
       const jA = jointMap.get(savedBeam.a);
       const jB = jointMap.get(savedBeam.b);
       if (!jA || !jB) continue;
-      const material = savedBeam.material === 'road'
-        ? this.level.materials.road
-        : (this.level.materials.wood ?? this.level.materials.road);
+      // Resolve by material id; resolveMaterial also shims legacy v1 saves
+      // ('road' -> asphalt, 'wood' -> wood).
+      const material = resolveMaterial(savedBeam.material);
       this.beams.push({ a: jA, b: jB, material, constraint: null });
     }
 

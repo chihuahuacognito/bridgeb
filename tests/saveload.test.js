@@ -6,8 +6,8 @@ const ANCHORS = [
   { x: 880, y: 480, isAnchor: true, bodyId: 'anchor_right_0' },
 ];
 const MID = { x: 640, y: 440, isAnchor: false, bodyId: 'joint_123' };
-const MAT_ROAD = { type: 'road', stiffness: 0.6, snapThreshold: 0.065 };
-const MAT_BEAM = { type: 'beam', stiffness: 0.4, snapThreshold: 0.08 };
+const MAT_ROAD = { id: 'concrete', type: 'road', stiffness: 0.14, snapThreshold: 0.05 };
+const MAT_BEAM = { id: 'steel', type: 'beam', stiffness: 0.30, snapThreshold: 0.22 };
 
 beforeEach(() => localStorage.clear());
 
@@ -47,16 +47,17 @@ describe('saveLayout / loadLayout round-trip', () => {
     expect(data.joints[0]).toEqual({ id: 'joint_123', x: 640, y: 440 });
   });
 
-  it('serializes beams with endpoint bodyIds and material type', () => {
+  it('serializes beams with endpoint bodyIds and material id (v2)', () => {
     const beams = [
       { a: ANCHORS[0], b: MID, material: MAT_ROAD, constraint: {} },
       { a: MID, b: ANCHORS[1], material: MAT_BEAM, constraint: {} },
     ];
     saveLayout('L1', [...ANCHORS, MID], beams, 'truck');
     const data = loadLayout('L1');
+    expect(data.version).toBe(2);
     expect(data.beams).toEqual([
-      { a: 'anchor_left_0', b: 'joint_123', material: 'road' },
-      { a: 'joint_123',     b: 'anchor_right_0', material: 'beam' },
+      { a: 'anchor_left_0', b: 'joint_123', material: 'concrete' },
+      { a: 'joint_123',     b: 'anchor_right_0', material: 'steel' },
     ]);
   });
 
