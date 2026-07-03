@@ -1,18 +1,21 @@
 // src/utils/prebuilt.js
 // Pure expansion of a level's `prebuilt` block into scene-shaped joints/beams
-// plus per-material cost (deducted from the split budget at runtime).
+// plus a single total cost (deducted from the budget at runtime).
+import { resolveMaterial } from '../data/materials.js';
+
 export function expandPrebuilt(level) {
   const pb = level.prebuilt;
-  if (!pb) return { joints: [], beams: [], cost: { road: 0, wood: 0 } };
+  if (!pb) return { joints: [], beams: [], cost: 0 };
 
   const joints = pb.joints.map(j => ({ x: j.x, y: j.y, isAnchor: false, bodyId: j.id }));
 
-  const cost = { road: 0, wood: 0 };
+  let cost = 0;
   const beams = pb.beams.map(b => {
-    const matKey = b.material === 'road' ? 'road' : 'wood';
-    const mat = level.materials[matKey];
+    // Prefer the level's tuned material object (keyed 'road'/'wood'); fall back
+    // to the shared registry (also handles material ids and legacy keys).
+    const mat = level.materials?.[b.material] ?? resolveMaterial(b.material);
     const c = mat.blocks?.[b.size]?.cost ?? mat.cost;
-    cost[matKey] += c;
+    cost += c;
     return { a: b.a, b: b.b, material: mat, cost: c };
   });
 

@@ -3,8 +3,8 @@ import { expandPrebuilt } from '../src/utils/prebuilt.js';
 import { ALL_LEVELS } from '../src/data/leveldata.js';
 
 describe('expandPrebuilt', () => {
-  it('returns empty result for a level without prebuilt', () => {
-    expect(expandPrebuilt(ALL_LEVELS.L01)).toEqual({ joints: [], beams: [], cost: { road: 0, wood: 0 } });
+  it('returns empty result with zero cost for a level without prebuilt', () => {
+    expect(expandPrebuilt(ALL_LEVELS.L01)).toEqual({ joints: [], beams: [], cost: 0 });
   });
 
   it('expands L03 joints with isAnchor=false and bodyId=id', () => {
@@ -15,7 +15,7 @@ describe('expandPrebuilt', () => {
     ]);
   });
 
-  it('expands beams with resolved material object and per-beam cost', () => {
+  it('expands beams with resolved material object and a single total cost', () => {
     const l = ALL_LEVELS.L03;
     const { beams, cost } = expandPrebuilt(l);
     expect(beams).toHaveLength(3);
@@ -26,7 +26,7 @@ describe('expandPrebuilt', () => {
     });
     const expected = l.prebuilt.beams
       .reduce((s, b) => s + l.materials.road.blocks[b.size].cost, 0);
-    expect(cost.road).toBe(expected);
-    expect(cost.wood).toBe(0);
+    expect(typeof cost).toBe('number');
+    expect(cost).toBe(expected);
   });
 });
