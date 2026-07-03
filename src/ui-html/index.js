@@ -4,6 +4,7 @@ import { mountSidebar } from './components/Sidebar.js';
 import { mountHud }     from './components/Hud.js';
 import { mountToolbar } from './components/Toolbar.js';
 import { mountSizeRow } from './components/SizeRow.js';
+import { mountMaterialSubmenu } from './components/MaterialSubmenu.js';
 import { mountResultModal } from './components/ResultModal.js';
 import { mountConvoyProgress } from './components/ConvoyProgress.js';
 
@@ -19,6 +20,7 @@ export function mountUi(opts) {
   mountHud(document.getElementById('ui-hud'));
   mountToolbar(document.getElementById('ui-toolbar'));
   mountSizeRow(document.getElementById('ui-size-row'));
+  mountMaterialSubmenu(root);
   mountResultModal(document.getElementById('ui-modals'));
   mountConvoyProgress(root);
 

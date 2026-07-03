@@ -72,6 +72,37 @@
 .budget-chip--road { --chip-accent: #5a5a72; }
 .budget-chip--wood { --chip-accent: #c47a15; }
 .budget-chip--total { --chip-accent: var(--green); }
+
+/* Material submenu — springs out above the ROAD/BEAM toolbar tile. */
+.material-submenu {
+  position: absolute; left: 12px; bottom: 110px; z-index: 21;
+  display: none; flex-direction: column; gap: 8px;
+  padding: 10px; background: var(--panel); border-radius: var(--r-md);
+  box-shadow: var(--shadow-float); pointer-events: auto;
+  transform-origin: bottom left;
+}
+.material-submenu.open { display: flex; animation: matsub-pop .22s cubic-bezier(.2,.9,.3,1.35) both; }
+@keyframes matsub-pop { from { opacity: 0; transform: translateY(10px) scale(.92); } to { opacity: 1; transform: none; } }
+.matsub-head { display: flex; align-items: center; justify-content: space-between; gap: 14px; padding: 2px 4px 0; }
+.matsub-cat { font-size: 10px; letter-spacing: .1em; color: var(--text-soft); font-weight: 700; text-transform: uppercase; }
+.matsub-sel { font-size: 12px; font-weight: 700; }
+.matsub-sel b { color: var(--gold-dark); }
+.matsub-row { display: flex; gap: 8px; }
+.mat-tile { width: 88px; height: 86px; flex-direction: column; gap: 5px; padding: 8px 6px 6px; position: relative; }
+.mat-swatch { width: 76px; height: 26px; border-radius: 6px; border: 1px solid rgba(0,0,0,.12); }
+.mat-name { font-size: 12px; font-weight: 700; }
+.mat-cost { font-size: 11px; font-weight: 700; color: var(--gold-dark); }
+.mat-tile[data-active="true"] { background: var(--blue); color: #fff; box-shadow: 0 5px 0 var(--blue-dark), var(--shadow-float); }
+.mat-tile[data-active="true"] .mat-cost { color: #fff8d8; }
+.mat-tip {
+  position: absolute; left: 50%; bottom: calc(100% + 8px); transform: translateX(-50%);
+  background: #263238; color: #fff; font-size: 10.5px; line-height: 1.35; font-weight: 500;
+  padding: 6px 9px; border-radius: 8px; width: 150px; text-align: center;
+  opacity: 0; pointer-events: none; transition: opacity .15s; box-shadow: 0 6px 16px rgba(0,0,0,.28); z-index: 5;
+}
+.mat-tile:hover .mat-tip { opacity: 1; }
+/* Hide the submenu during test runs, like the rest of build chrome. */
+#ui-root.mode-test .material-submenu { display: none !important; }
 .budget-chip--flash { animation: budget-flash 0.35s ease; }
 @keyframes budget-flash { 0%,100% { transform: scale(1); } 40% { transform: scale(1.06); box-shadow: 0 0 0 3px var(--chip-accent), var(--shadow-card); } }
 

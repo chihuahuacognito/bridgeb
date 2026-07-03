@@ -276,6 +276,7 @@ export class LevelScene extends Phaser.Scene {
       modeToggle:    () => this.toggleTest(),
       vehicleSelect: (k) => this._selectVehicle(k),
       toolSelect:    (k) => this._onToolSelect(k),
+      materialSelect: (p) => this._onMaterialSelect(p),
       sizeSelect:    (k) => this._onSizeSelect(k),
       gravityPreset: (k) => this._applyGravityPreset(k),
       layoutSave:    () => this._handleSave(),
@@ -297,6 +298,7 @@ export class LevelScene extends Phaser.Scene {
     bus.on('mode:toggle',    this._busHandlers.modeToggle);
     bus.on('vehicle:select', this._busHandlers.vehicleSelect);
     bus.on('tool:select',    this._busHandlers.toolSelect);
+    bus.on('material:select', this._busHandlers.materialSelect);
     bus.on('size:select',    this._busHandlers.sizeSelect);
     bus.on('gravity:preset', this._busHandlers.gravityPreset);
     bus.on('layout:save',    this._busHandlers.layoutSave);
@@ -333,6 +335,7 @@ export class LevelScene extends Phaser.Scene {
       bus.off('mode:toggle',    this._busHandlers.modeToggle);
       bus.off('vehicle:select', this._busHandlers.vehicleSelect);
       bus.off('tool:select',    this._busHandlers.toolSelect);
+      bus.off('material:select', this._busHandlers.materialSelect);
       bus.off('size:select',    this._busHandlers.sizeSelect);
       bus.off('gravity:preset', this._busHandlers.gravityPreset);
       bus.off('layout:save',    this._busHandlers.layoutSave);
@@ -1438,16 +1441,18 @@ export class LevelScene extends Phaser.Scene {
   }
 
   _onToolSelect(toolKey) {
+    this._materialByCat ??= { road: 'asphalt', beam: 'wood' };
     if (toolKey === 'road' || toolKey === 'beam') {
       // Free-form only: skip block/ghost mode, enter freeform with the selected material.
       this._removeMode = false;
-      const matKey = toolKey === 'road' ? 'road' : 'wood';
-      const mat = this.level.materials[matKey];
-      if (!mat) return;
+      const list = toolKey === 'road' ? ROAD_MATERIALS : BEAM_MATERIALS;
+      const mat = resolveMaterial(this._materialByCat[toolKey]) ?? list[0];
       this.material = mat;
       this._blockState = { freeform: true, material: null, size: null, blockLength: 0 };
       this._ghost.hide();
       bus.emit('sizes:hide');
+      // Spring out the material submenu for this category.
+      bus.emit('materials:show', { type: toolKey, list, current: mat.id });
     } else if (toolKey === 'free') {
       this._removeMode = false;
       this._blockState.freeform = !this._blockState.freeform;
@@ -1457,6 +1462,7 @@ export class LevelScene extends Phaser.Scene {
       this._ghost.hide();
       this.pendingJointA = null;
       bus.emit('sizes:hide');
+      bus.emit('materials:hide');
     } else if (toolKey === 'remove') {
       if (this._ui.delete === false) return;
       this._removeMode = true;
@@ -1464,12 +1470,21 @@ export class LevelScene extends Phaser.Scene {
       this.pendingJointA = null;
       this._ghost.hide();
       bus.emit('sizes:hide');
+      bus.emit('materials:hide');
     } else if (toolKey === 'zoom-in') {
       this.cameras.main.setZoom(Math.min(this.cameras.main.zoom * 1.1, 2.5));
     } else if (toolKey === 'zoom-out') {
       this.cameras.main.setZoom(Math.max(this.cameras.main.zoom / 1.1, 0.5));
     }
     // grid / snap / nodes / cable / hydraulic / spring / remove are no-ops in this scope.
+  }
+
+  _onMaterialSelect({ id }) {
+    const mat = resolveMaterial(id);
+    this.material = mat;
+    this._materialByCat ??= { road: 'asphalt', beam: 'wood' };
+    this._materialByCat[mat.type === 'road' ? 'road' : 'beam'] = id;
+    bus.emit('material:active', { id });
   }
 
   _onSizeSelect(sizeKey) {
