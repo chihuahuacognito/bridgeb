@@ -50,7 +50,7 @@ export const MATERIALS = {
     visual: { base: 0xb8bcc2, edgeTop: 0xcfd3d8, edgeBottom: 0x95999f, motif: 'speckle', centerLine: true },
   },
   rope: {
-    id: 'rope', name: 'Rope', type: 'beam', cost: 1, stiffness: 0.06, snapThreshold: 0.30, thickness: 5,
+    id: 'rope', name: 'Rope', type: 'beam', cost: 1, stiffness: 0.06, snapThreshold: 0.30, thickness: 3,
     blocks: blocks(ROPE_COST),
     visual: { base: 0xc8a86a, edgeTop: 0xdcc088, edgeBottom: 0xa5824a, motif: 'twist' },
   },
@@ -60,7 +60,7 @@ export const MATERIALS = {
     visual: { base: 0xa9772f, edgeTop: 0xc08f44, edgeBottom: 0x835a20, motif: 'grain' },
   },
   steel: {
-    id: 'steel', name: 'Steel', type: 'beam', cost: 3, stiffness: 0.30, snapThreshold: 0.22,
+    id: 'steel', name: 'Steel', type: 'beam', cost: 3, stiffness: 0.30, snapThreshold: 0.22, thickness: 6,
     blocks: blocks(STEEL_COST),
     visual: { base: 0x8a94a3, edgeTop: 0xc2ccd8, edgeBottom: 0x5f6875, motif: 'sheen' },
   },

@@ -144,8 +144,8 @@ export class GhostBeam {
 
     // ── 4. Draw ───────────────────────────────────────────────────────────────
     const isRoad    = material?.type === 'road';
-    const baseColor = isRoad ? 0x888888 : 0xd48a0c;
-    const thickness = isRoad ? 8 : 5;
+    const baseColor = material?.visual?.base ?? (isRoad ? 0x888888 : 0xd48a0c);
+    const thickness = material?.thickness ?? (isRoad ? 8 : 5);
     const alpha     = isValid ? 0.65 : 0.30;
     const edgeColor = isValid ? 0x55aaff : 0xff4444;
 

@@ -976,9 +976,9 @@ export class LevelScene extends Phaser.Scene {
     this.beamsGraphics.clear();
     for (const beam of this.beams) {
       const isRoad = beam.material?.type === 'road';
-      this.beamsGraphics.lineStyle(
-        isRoad ? VIZ.ROAD_THICKNESS : VIZ.BEAM_THICKNESS,
-        isRoad ? VIZ.ROAD_COLOR     : VIZ.BEAM_COLOR, 1);
+      const color = beam.material?.visual?.base ?? (isRoad ? VIZ.ROAD_COLOR : VIZ.BEAM_COLOR);
+      const width = beam.material?.thickness ?? (isRoad ? VIZ.ROAD_THICKNESS : VIZ.BEAM_THICKNESS);
+      this.beamsGraphics.lineStyle(width, color, 1);
       this.beamsGraphics.beginPath();
       this.beamsGraphics.moveTo(beam.a.x, beam.a.y);
       this.beamsGraphics.lineTo(beam.b.x, beam.b.y);
@@ -1023,9 +1023,10 @@ export class LevelScene extends Phaser.Scene {
     this.beamsGraphics.clear();
     for (const { constraint, type } of physics._beamConstraints) {
       const isRoad = type === 'road';
-      this.beamsGraphics.lineStyle(
-        isRoad ? VIZ.ROAD_THICKNESS : VIZ.BEAM_THICKNESS,
-        isRoad ? VIZ.ROAD_COLOR     : VIZ.BEAM_COLOR, 1);
+      const mat = constraint.material;
+      const color = mat?.visual?.base ?? (isRoad ? VIZ.ROAD_COLOR : VIZ.BEAM_COLOR);
+      const width = mat?.thickness ?? (isRoad ? VIZ.ROAD_THICKNESS : VIZ.BEAM_THICKNESS);
+      this.beamsGraphics.lineStyle(width, color, 1);
       const aX = constraint.bodyA.position.x, aY = constraint.bodyA.position.y;
       const bX = constraint.bodyB.position.x, bY = constraint.bodyB.position.y;
       const midX = (aX + bX) / 2;
@@ -1207,7 +1208,7 @@ export class LevelScene extends Phaser.Scene {
     if (segLen < 4) return;
     const segAngle = Math.atan2(by - ay, bx - ax);
     const isRoad = c.material?.type === 'road';
-    const color  = isRoad ? 0x3a3a3a : 0x7a5c2e;
+    const color  = c.material?.visual?.base ?? (isRoad ? 0x3a3a3a : 0x7a5c2e);
     const pieceH = isRoad ? 14 : 7;
     const N = Math.max(2, Math.min(5, Math.round(segLen / 80)));
 
