@@ -1,245 +1,249 @@
-# Material Variety — Road & Beam Types (Design)
+# Material Variety — Road & Beam Types (Design v2)
 
-**Date:** 2026-07-03 · **Status:** Approved, ready for planning · **Branch:** `feat/material-variety`
+**Date:** 2026-07-03 · **Status:** Approved after 3-agent review, ready for planning · **Branch:** `feat/material-variety`
+
+> **v2 changes** (post-review, per user decisions): roads trimmed to **3** (Dirt/Asphalt/
+> Concrete), beams **3** (Rope/Wood/Steel); **friction is entirely out of scope** ("we
+> barely use it"); **all materials available from the start** (no per-module gating).
+> These delete the friction blocker, the `type→category` rename, skid FX, tutorial-card
+> coupling, and per-level material lists. Remaining real work: a material **registry**,
+> **single-budget** unification, per-material **rendering**, the **submenu UI**, and
+> **save/load** migration. See §13 for the full review-findings disposition.
 
 ## 1. Goal
 
-Give the player a **palette of 5 road materials and 5 beam materials**, each with a
-distinct physical character *and* a distinct look, chosen from a smart, minimal
-submenu that expands off the existing bottom-toolbar ROAD / BEAM tiles. Materials
-read as "closer to real life" but stay legible to the kid demographic and reinforce
-the three learning modules (Gravity & Falling → Strong Shapes → Weight & Engineering).
+Give the player **3 road materials and 3 beam materials**, each with a distinct
+physical character (sag, strength, price) and a distinct look, chosen from a smart,
+minimal submenu that springs off the existing bottom-toolbar ROAD / BEAM tiles. A
+single total budget is spent across all materials, each with its own per-block price.
+Audience is kids (bright toy/claymation style); the set reinforces the Weight &
+Engineering learning theme by making cheap-weak vs. pricey-strong a real trade-off.
 
-This is a **data + light-plumbing** feature. No physics rewrite: every property is
-expressible with existing constraint params plus one small promotion (per-material
-friction). The one genuinely new subsystem is the material **submenu UI**.
+This is a **data + light-plumbing** feature. `physics.js` is essentially untouched.
 
 ## 2. The material lineup
 
-Ordered cheap-weak → pricey-strong. Numbers below are **directional**; final values
-are tuned in-app with the cheat-panel weight slider per `LEVEL_AUTHORING.md`
-("verify empirically, don't compute").
+Numbers are **directional**; final values are tuned in-app with the cheat-panel weight
+slider per `LEVEL_AUTHORING.md` ("verify empirically, don't compute"). **No friction
+fields** — roads differ by sag/strength/price/look only.
 
-### Roads — drivable deck (`category: 'road'`, gets a collision body; friction matters)
-
-| id | Name | cost | stiffness | snapThreshold | friction / static | Character & lesson |
-|----|------|:---:|:---:|:---:|:---:|---|
-| `dirt`     | Dirt       | 1 | 0.05 | 0.02  | 0.20 / 0.25 | Saggy, weak, loose grip. Cheapest — "cheap deck can't hold weight." |
-| `tar`      | Tar        | 2 | 0.07 | 0.025 | 0.15 / 0.20 | Budget blacktop, **slippery** on ramps. |
-| `asphalt`  | Asphalt    | 4 | 0.09 | 0.03  | 0.60 / 0.50 | The balanced **default** road. |
-| `concrete` | Concrete   | 6 | 0.14 | 0.05  | 0.80 / 0.70 | Stiff, strong, grippy, heavy, pricey. |
-| `steel-deck`| Steel Deck| 9 | 0.20 | 0.08  | **0.30 / 0.35** | Strongest & stiffest — but **slick metal**. "Strongest ≠ best." |
-
-### Beams — structural brace (`category: 'beam'`, no collision body; friction irrelevant)
+### Roads — drivable deck (`type: 'road'`)
 
 | id | Name | cost | stiffness | snapThreshold | Character & lesson |
 |----|------|:---:|:---:|:---:|---|
-| `rope`   | Rope   | 1 | 0.06 | 0.30 | Floppy, weak, pulls only. Cheapest brace. |
-| `wood`   | Wood   | 2 | 0.15 | 0.18 | Classic all-rounder (today's default beam). |
-| `cable`  | Cable  | 3 | 0.08 | 0.45 | Taut in tension, floppy in compression. Teaches tension vs. compression. |
-| `steel`  | Steel  | 5 | 0.30 | 0.22 | Stiff, strong workhorse. |
-| `girder` | Girder | 8 | 0.45 | 0.28 | Rock-rigid I-beam, strongest & heaviest. Expert tier. |
+| `dirt`     | Dirt     | 1 | 0.05 | 0.018 | Saggy, weak, cheapest. "A cheap deck can't hold weight." |
+| `asphalt`  | Asphalt  | 4 | 0.09 | 0.03  | The balanced **default** road (today's `road`). |
+| `concrete` | Concrete | 6 | 0.14 | 0.05  | Stiff, strong, heavy, pricey. Holds trucks on long gaps. |
 
-Grip lesson lands at both ends of the road ladder (Tar cheap-slick, Steel Deck
-premium-slick); the stiff-vs-strong lesson lands via Cable (strong, floppy) vs.
-Girder (strong, rigid).
+### Beams — structural brace (`type: 'beam'`)
+
+| id | Name | cost | stiffness | snapThreshold | render thickness | Character & lesson |
+|----|------|:---:|:---:|:---:|:---:|---|
+| `rope`  | Rope  | 1 | 0.06 | 0.30 | thin  | Floppy, weak, cheapest brace. |
+| `wood`  | Wood  | 2 | 0.15 | 0.18 | normal| Classic all-rounder (today's `wood`). |
+| `steel` | Steel | 5 | 0.30 | 0.22 | normal| Stiff, strong workhorse. |
+
+Both ladders read weak/cheap → strong/pricey, in parallel. Beam **render** thickness is
+a canvas-only value (beams have no collision body) — it is *not* a physics field.
 
 ## 3. Data model
 
-Today materials are per-level ad-hoc objects built by `roadMat()` / `woodMat()` in
-`leveldata.js`, keyed loosely as `road` / `wood`. We introduce a single registry.
+Today materials are per-level objects built by `roadMat()`/`woodMat()` in `leveldata.js`,
+keyed `road`/`wood`. Introduce one registry as the source of truth.
 
-**`src/data/materials.js`** — new module, the source of truth:
+**`src/data/materials.js`** (new):
 
 ```js
 export const MATERIALS = {
-  dirt:  { id:'dirt', name:'Dirt', category:'road', cost:1,
-           stiffness:0.05, snapThreshold:0.02,
-           friction:0.20, frictionStatic:0.25, thickness:30,
-           visual:{ base:0x8a6a3e, edgeTop:0x9c7a4a, edgeBottom:0x6b4f2c,
-                    motif:'speckle', centerLine:false } },
-  // …one entry per material above
+  dirt:    { id:'dirt', name:'Dirt', type:'road', cost:1, stiffness:0.05, snapThreshold:0.018,
+             blocks: blocksFor('road'), visual:{ base:0x8a6a3e, edgeTop:0x9c7a4a, edgeBottom:0x6b4f2c, motif:'speckle', centerLine:false } },
+  asphalt: { id:'asphalt', name:'Asphalt', type:'road', cost:4, stiffness:0.09, snapThreshold:0.03,
+             blocks: blocksFor('road'), visual:{ base:0x3b4047, edgeTop:0x4c535b, edgeBottom:0x23262a, motif:'speckle', centerLine:true } },
+  concrete:{ id:'concrete', name:'Concrete', type:'road', cost:6, stiffness:0.14, snapThreshold:0.05,
+             blocks: blocksFor('road'), visual:{ base:0xb8bcc2, edgeTop:0xcfd3d8, edgeBottom:0x95999f, motif:'speckle', centerLine:true } },
+  rope:    { id:'rope', name:'Rope', type:'beam', cost:1, stiffness:0.06, snapThreshold:0.30, thickness:5,
+             blocks: blocksFor('beam'), visual:{ base:0xc8a86a, edgeTop:0xdcc088, edgeBottom:0xa5824a, motif:'twist' } },
+  wood:    { id:'wood', name:'Wood', type:'beam', cost:2, stiffness:0.15, snapThreshold:0.18,
+             blocks: blocksFor('beam'), visual:{ base:0xa9772f, edgeTop:0xc08f44, edgeBottom:0x835a20, motif:'grain' } },
+  steel:   { id:'steel', name:'Steel', type:'beam', cost:5, stiffness:0.30, snapThreshold:0.22,
+             blocks: blocksFor('beam'), visual:{ base:0x8a94a3, edgeTop:0xc2ccd8, edgeBottom:0x5f6875, motif:'sheen' } },
 };
-export const ROAD_MATERIALS = Object.values(MATERIALS).filter(m => m.category==='road');
-export const BEAM_MATERIALS = Object.values(MATERIALS).filter(m => m.category==='beam');
+export const ROAD_MATERIALS = Object.values(MATERIALS).filter(m => m.type==='road');
+export const BEAM_MATERIALS = Object.values(MATERIALS).filter(m => m.type==='beam');
 ```
 
-Material object fields:
+- **`type` is KEPT** (`'road'`|`'beam'`) — it is still the drivability discriminator, so
+  **no `type→category` rename** (this deletes review Major-4 and its blast radius). Every
+  existing `material.type === 'road'` branch keeps working unchanged.
+- New fields: `id`, `name` (submenu label), `visual` (§6), optional `thickness` (render).
+- `cost` + per-size `blocks{S,M,L,XL}:{length,cost}` are built by a `blocksFor(type)`
+  helper (same shape `roadMat`/`woodMat` produce today); a material's `cost` scales its
+  blocks cost column.
+- **Registry objects are treated immutable.** Any per-level tuning override or cheat-panel
+  edit operates on a shallow **clone**, never the registry entry (see §9, review Minor-6).
 
-- `id`, `name` — identity (name shown on the submenu tile).
-- `category` — `'road'` (drivable) | `'beam'` (brace). **Replaces the old binary
-  `type`.** Everywhere the code branches on `material.type === 'road'`, it branches
-  on `material.category === 'road'`. Drivability = `category === 'road'`.
-- `cost` — base coins for the material. Retains a per-size **`blocks`** map
-  (`{S,M,L,XL}: {length, cost}`) exactly as `roadMat()`/`woodMat()` build today; the
-  submenu tile shows a representative unit cost, the size row shows per-size cost. The
-  material's relative price scales its whole `blocks` cost column.
-- `stiffness`, `snapThreshold` — constraint tuning (unchanged meaning).
-- `friction`, `frictionStatic` — **new**, promoted from the hardcoded `0.6` / default
-  in `physics.buildBeam` (§4). Only meaningful for roads but stored on all for
-  uniformity (ignored for beams, which have no collision body).
-- `thickness` — promoted from the hardcoded `10 | 30`. Lets Girder read chunky and
-  Cable/Rope read thin. Beams keep their structural-only rendering thickness.
-- `visual` — see §6.
+**Offered palette:** with "all available from start," the submenu always lists
+`ROAD_MATERIALS` / `BEAM_MATERIALS` — **no per-level material list** is needed. An
+optional `ui.materials:{road:[ids],beam:[ids]}` override may be added later to restrict a
+level, but is out of scope here.
 
-**Backwards compatibility.** `roadMat()` / `woodMat()` become thin adapters that
-return `MATERIALS.asphalt` / `MATERIALS.wood` (preserving existing level defaults) so
-untouched levels keep working. `level.materials` may now list any subset of material
-ids; a level's `ui.tools` gains the notion of which materials are offered per category
-(§5). Existing prebuilt beams referencing `material: 'road' | 'wood'` map to
-`asphalt` / `wood`.
+**Back-compat:** `roadMat()`/`woodMat()` become thin adapters returning
+`MATERIALS.asphalt` / `MATERIALS.wood` (a clone if a level passes size overrides), so the
+existing 12 levels behave exactly as today. Prebuilt beams referencing `material:'road'`/
+`'wood'` resolve to `asphalt`/`wood`.
 
-## 4. Physics changes (`physics.js`)
+## 4. Physics (`physics.js`) — essentially no change
 
-The **iron law holds** — all edits stay inside `physics.js`.
+- `buildBeam` already reads `material.stiffness`, `material.snapThreshold`, and
+  `material.type` — new materials flow through untouched.
+- **Friction/thickness for roads: unchanged.** Road collision body + caps keep the
+  hardcoded `friction: 0.6`; road thickness stays `30`. (Not promoting road thickness
+  sidesteps review Blocker-2; not touching friction sidesteps Blocker-1.)
+- Beam **render** thickness (Rope thin, etc.) lives in the renderer (§6), not physics —
+  beams have no collision body.
+- `splitBeam` already carries `beam.material` into both halves (verified
+  `LevelScene.js:740-757`) — per-material snap/stiffness survive a split. No change.
+- **Iron law:** no new `scene.matter.*` call sites are introduced.
 
-1. In `buildBeam`, read from the material instead of constants:
-   - road collision body (`~:256`): `friction: material.friction`,
-     `frictionStatic: material.frictionStatic`, keep `restitution: 0`.
-   - **cap circles (`~:270`) must use the same** `friction`/`frictionStatic` or grip
-     is inconsistent at every joint.
-   - `thickness` from `material.thickness` (fallback to current 10/30 by static-ness).
-2. `const isRoad = material.category === 'road'` (was `material.type === 'road'`).
-3. No change to the stress/snap model — `stiffness`/`snapThreshold` already flow
-   through per material.
+## 5. Budget model — single total pool
 
-Explicitly **out of scope:** wheel-torque drive. Friction in the current
-chassis-force model is a strong lever for slope grip / skid / coast and a weak one
-for top-speed / launch — that is acceptable and documented in the spec history.
+Replace the two hardwired pools (`_budgetRoad`/`_budgetWood`) with a single money pool
+`_budget`. Each material deducts `material.cost × block-size factor`; the top bar shows one
+total, as the user specified ("just show the total budget, each material has its own price").
 
-## 5. Budget model
+Touch-points (verified by review — complete list):
+- Pools: `LevelScene.js:230, 675, 708, 793, 811, 897, 1443, 1644, 1701`.
+- **Also** (review Major-4, initially missed): `_freshBudget()` `:1551-1556` and
+  `_prebuiltCost` `:137`, whose source `expandPrebuilt()` returns `{road,wood}`
+  (`prebuilt.js:6,10,15`) — collapse to one `total`.
+- `_flashBudget(material.type)` `:835` + `BudgetChip.js:35-39` + `TopBar.js:32-33,57-63`
+  (two chips → one total chip) + the `budget:update` payload (`{road,wood}` → `{total,spent}`).
+- **Level schema migration (one commit, symmetric):** every `RAW_LEVELS` budget
+  `{road,wood}` → `{total: road + (wood||0)}` **and** `gdd/levels.csv` gains `budget_total`
+  (legacy `budget_road/wood` readable one cycle) — applied to `RAW_LEVELS`, the generated
+  overrides, and the shim together, or `roundtrip.test.js` (deep-equals all 12) breaks
+  (review Major-6).
 
-Move from the two hardwired pools (`_budgetRoad` / `_budgetWood`) to a **single money
-pool** `_budget`, because a palette of 10 materials can't map to two pools and the
-approved UX is "each material has its own cost, one total budget shown top."
+## 6. Rendering — distinct, on-style
 
-- LevelScene keeps one `this._budget` number. Every place that currently picks
-  `_budgetRoad` vs `_budgetWood` (init `:230`, freeform `:675`, block `:708`, undo
-  `:793`, emit `:811`, reset `:897`, rebuild `:1443`, remove `:1644`, HUD `:1701`)
-  collapses to the single pool. Cost deducted = `material.cost` × block-size factor.
-- `bus.emit('budget:update', …)` now sends `{ total, spent }` (or just `total`
-  remaining). The top-bar **BudgetChip** shows the single total (green accent),
-  matching the approved mockup. The old `budget-chip--road` / `--wood` variants are
-  retired.
-- **Level schema migration:** `level.budget: { road, wood }` → `level.budget: { total }`.
-  A compat shim reads legacy `{road, wood}` as `total = road + (wood||0)` so existing
-  CSV/level data loads until migrated. `gdd/levels.csv` gains a `budget_total` column;
-  `budget_road`/`budget_wood` remain readable for one migration cycle.
+`STYLE_SPEC.md` forbids faking the 3D hero look (vehicles/terrain/water — those are
+sprites), but **beams/roads are already `Phaser.Graphics`** (`LevelScene.js:575-582`,
+debris `:1219`). So per-material distinction is a legit canvas job. "Realistic" =
+**realistic-reading** (tell dirt from concrete from steel at a glance), rendered in the
+existing **chunky, high-contrast toy style** — distinct hue + 3-tone shading + a light
+**motif**, never photoreal. Keep motifs bold; a motif that can't read as cheerful-toy at a
+glance gets dropped (review Minor-7). `segments` motif is cut.
 
-## 6. Rendering — distinct, "realistic", on-style
+`visual = { base, edgeTop, edgeBottom, motif, centerLine }`. Motif catalogue (cheap
+canvas primitives): `speckle` (dirt/asphalt/concrete aggregate), `grain` (wood),
+`sheen` (steel highlight band), `twist` (rope braid), `plate` (metal seams — reserved).
+The validated look is in the mockup `.superpowers/brainstorm/…/materials-visuals.html`.
 
-**Resolving the tension:** `STYLE_SPEC.md` forbids faking the 3D hero look
-(vehicles/terrain/water) with code — those are pre-rendered sprites. But **beams and
-roads are already drawn in-canvas** with `Phaser.Graphics` (flat fills at
-`LevelScene.js:575-582`, debris `:1219`). So per-material distinction is legitimately
-a canvas job. "Realistic" here means **realistic-reading** (you can instantly tell tar
-from concrete from steel), rendered in the existing **chunky toy/claymation style** —
-distinct hue + 2–3-tone shading (top highlight, base, bottom shade) + a light surface
-**motif**, *not* photoreal texture.
+Rendering sites that read `visual` instead of constants:
+- The placed-beam redraw loop (`redrawBeams`, `LevelScene.js:987`) — deck fill/edges/centre-line.
+- `drawRoads()` `:567-586` cliff-top strip — uses the active/starting road material so the approach matches.
+- `_spawnDebris` color `:1219` — from `material.visual.base`.
+- **`GhostBeam.js:146`** (review Major-3, not in v1) — the placement ghost's color/thickness reads `material.visual`.
 
-Each material's `visual` descriptor drives all its rendering:
+Fallback: any missing `visual` field → today's asphalt/wood colors.
 
-```js
-visual: {
-  base, edgeTop, edgeBottom,   // 3-tone body shading (already the road-strip pattern)
-  motif: 'speckle'|'grain'|'sheen'|'twist'|'segments'|'plate'|null,
-  centerLine: true|false,       // dashed centre line (roads only)
-}
-```
-
-Motif catalogue (cheap canvas primitives, drawn once per beam segment):
-- `speckle` — scattered darker dots (dirt, tar, concrete aggregate).
-- `grain` — a few lengthwise stroke lines (wood).
-- `sheen` — a bright thin highlight band offset along the top (steel, steel-deck, girder metal).
-- `twist` — short diagonal hatch marks (rope, cable — the braided look).
-- `segments` — periodic cross-ticks (bamboo, if adopted).
-- `plate` — panel seams at intervals (steel-deck).
-
-Rendering touch-points that read the descriptor instead of constants:
-- The placed-beam redraw loop (road deck fill + edges + centre line).
-- `drawRoads()` cliff-top cosmetic strip (uses the *active/starting* road material so
-  the approach road matches the deck).
-- `_spawnDebris` color (`:1219`) → `material.visual.base` shaded.
-
-Fallback: any missing `visual` field falls back to today's asphalt/wood colors, so a
-half-authored material still renders.
+**Stress-glow caveat (review Major-3):** Rope's `snapThreshold` 0.30 vs. the global
+`VISUAL_FULL_STRAIN = 0.05` means rope reads full-red long before it fails. Make
+`VISUAL_FULL_STRAIN` a per-material derived value (~`0.8 × snapThreshold`) or accept &
+document. Low priority; note in testing.
 
 ## 7. Submenu UI (approved mockup)
 
-Reproduce the interactive mockup already validated with the user
-(`.superpowers/brainstorm/…/toolbar-submenu.html`):
+Reproduce the validated mockup (`.superpowers/brainstorm/…/toolbar-submenu.html`):
 
-- Clicking the **ROAD** or **BEAM** toolbar tile expands a material submenu that
-  floats above that tile (same `#ui-size-row` visual language: white card,
-  `--shadow-float`, `--r-md`), with a **spring-in / pop-out** animation (staggered
-  tile scale-fade). Clicking the tile again, or the other category, closes/swaps.
-- Each material tile: color **swatch** + **name** + gold **`$cost`** (mirrors
-  `size-tile`), blue active state. Hover → one-line personality tooltip.
-- The submenu header shows the active pick's unit price ("Concrete · $7/block").
-- **Total budget stays in the top-bar chip**, unchanged; it flashes when a material's
-  cost is applied.
-- New component `src/ui-html/components/MaterialSubmenu.js`; new events on the bus:
-  `materials:show {category, list, current}`, `material:select {id}`. Toolbar's
-  `tool:select` for `road`/`beam` toggles the submenu instead of directly setting a
-  size row. Selecting a material sets the active placing material (LevelScene) and
-  then the existing size row (S/M/L/XL) still applies on top.
+- Clicking **ROAD**/**BEAM** expands a material submenu floating above that tile (same
+  `#ui-size-row` language: white card, `--shadow-float`, `--r-md`), spring-in/pop-out
+  animation. Click the tile again / the other category to close/swap.
+- Each material tile: canvas **swatch** (its actual `visual`) + **name** + gold `$cost`,
+  blue active state; hover → one-line personality tooltip. Header shows the active pick's
+  unit price ("Concrete · $6/block").
+- **Total budget** stays in the top-bar chip; flashes when a cost applies.
+- New `src/ui-html/components/MaterialSubmenu.js`; new bus events `materials:show
+  {type,list,current}`, `material:select {id}`. Toolbar `tool:select` for road/beam
+  toggles the submenu; the existing size row (S/M/L/XL) still applies after, now showing
+  the chosen material's `blocks`. Flow: **tool → material → size**.
+- Teardown (review Minor-8): LevelScene owns the `material:select` handler in its
+  `_busHandlers` map + `shutdown` `bus.off` (mirrors the existing 12). `MaterialSubmenu`
+  mounts once for app lifetime like other UI components.
 
-Interaction order per approved flow: **tool (ROAD/BEAM) → material → size.** Size row
-behavior is unchanged; it now shows sizes for the chosen material's `blocks`.
+## 8. Save/load migration (review Blocker-2)
 
-## 8. Level authoring & migration
+`saveload.js:11` persists `material.type`; storing the new set unchanged would (a) lose
+*which* material a beam was, and (b) already only round-trips road/wood. Fix:
+- Persist **`material.id`**; bump save `version` to 2.
+- On load (`LevelScene.js:1806-1808`) resolve `MATERIALS[savedBeam.id]`; legacy shim maps
+  old `'road'→asphalt`, `'wood'→wood`.
+- Update `tests/saveload.test.js`.
 
-- `level.materials` becomes `{ road: [ids…], beam: [ids…] }` — the materials offered
-  in each category's submenu for that level (progression: early levels offer 1–2,
-  later levels the full palette). Default when omitted: `['asphalt']` / `['wood']`
-  (today's behavior).
-- `gdd/levels.csv` gains `road_materials` / `beam_materials` (`;`-lists of ids) and
-  `budget_total`. `genLevels.mjs` / `levelKnobs.js` parse them. Legacy columns remain
-  readable one cycle (§5).
-- Existing 12 levels: default to `asphalt` + `wood` so nothing changes until a level
-  is intentionally opened up to the palette.
+## 9. Invariants & risks (`AI_CODING_GUIDE.md` + review)
 
-## 9. Invariants & risks (from `AI_CODING_GUIDE.md`)
-
-- **Physics iron law:** only `physics.js` touches `scene.matter.*`. All friction /
-  thickness edits stay there.
-- **Constraint pointer refresh:** after `rebuildBridge()` / `splitBeam`, `beam.constraint`
-  must be updated — unchanged, but material now rides on the constraint, so verify
-  material survives a split (the new mid-beams inherit the parent's material).
-- **Scene teardown null-guards:** new submenu bus handlers must be `bus.off`'d in
-  `shutdown`, matching the existing pattern, or handlers stack across restarts.
-- **Idempotent builders** unchanged.
-- **Tutorial-buildable contract:** any level that references a material in its tutorial
-  text must actually offer that material (`ui.materials`) — extend the pre-flight check.
+- **Iron law** intact — no new `scene.matter.*` sites.
+- **Constraint-pointer refresh** after `rebuildBridge`/`splitBeam` unchanged; material rides
+  on the constraint and is verified to survive a split.
+- **Scene teardown** null-guards + `bus.off` for the new handler (§7).
+- **Registry immutability** — clone before any per-beam/cheat mutation; `updateBeamMaterial`
+  (`physics.js:592-597`) must not write through to registry objects (review Minor-6).
 
 ## 10. Testing
 
-- **Unit (Vitest):** material registry integrity (every id has required fields;
-  categories partition correctly); budget accounting on the single pool
-  (place/undo/remove/clear conserve coins); legacy `{road,wood}` budget shim; CSV
-  parse of new columns round-trips (`export:levels` ↔ `gen:levels`).
-- **Manual (must run the app, per the guide):** place each of the 10 materials, confirm
-  distinct look; drive a vehicle over Tar vs Concrete vs Steel Deck and confirm the
-  slope-grip/skid difference; confirm a Girder-braced deck holds a tank a Rope-braced
-  one drops; confirm submenu open/close animation and total-budget flash.
+- **Unit (Vitest):** registry integrity (every id has required fields; `type` partitions
+  road/beam); single-pool budget accounting (place/undo/remove/clear conserve coins);
+  legacy `{road,wood}`→`total` shim; save/load id round-trip + legacy shim; CSV
+  `budget_total` round-trip.
+- **Must update (review Major-5/6):** `tests/saveload.test.js`, `tests/levels.test.js`
+  (budget-direction + materials-blocks asserts), `tests/prebuilt.test.js` (single-pool
+  return), `tests/roundtrip.test.js` (symmetric migration), `tests/ui-html/BudgetChip.test.js`,
+  `tests/Toolbar.test.js` (submenu). 
+- **Manual (run the app):** place all 6 materials, confirm distinct look; a Dirt deck sags/
+  snaps under a truck where Concrete holds; a Steel-braced deck holds where a Rope-braced one
+  drops; submenu open/close animation + budget flash; load an old save (legacy shim).
 
-## 11. Out of scope (possible follow-ups)
+## 11. CSV pipeline (review Minor-7)
 
-- Wheel-torque drive (dramatic wheelspin/launch tied to grip).
-- Photoreal / pre-rendered **sprite** assets for materials (asset pipeline;
-  see `docs/asset-generation-prompts.md`).
-- Per-material **audio** (distinct creak/snap) and skid particle FX.
-- Bamboo as a "bendy-but-tough" beam swap for Rope.
+Append new columns at the **end** of `LEVEL_HEADER` (`levelKnobs.js:11-15`) to avoid
+positional desync; update the three in-sync spots (`LEVEL_HEADER`, parse `:71-97`,
+serialize `:126-143`) together. Only `budget_total` is needed now (no per-level material
+columns, since all materials are always available). Keep `road_sizes/wood_sizes` semantics.
 
-## 12. Phasing (implementation order)
+## 12. Out of scope
 
-1. **Registry + physics** — `materials.js`, promote friction/thickness/category in
-   `buildBeam`, adapters keep old levels working. (Unit-testable, no UI.)
-2. **Budget unification** — single `_budget` pool + compat shim + BudgetChip.
-3. **Rendering** — `visual` descriptor drives deck/beam/debris; motif primitives.
-4. **Submenu UI** — `MaterialSubmenu.js`, bus events, toolbar toggle, size-row after.
-5. **Authoring** — CSV columns, `leveldata.js` per-level material lists, open up a few
-   levels to showcase the palette.
+Friction/grip differences & skid FX; wheel-torque drive; per-module material gating;
+per-level material restriction (`ui.materials`); pre-rendered sprite assets; per-material
+audio; a 4th+ material per category.
 
-Each phase ends by running `npm test` and (where it affects feel/looks) `npm run dev`
-and playing the affected levels.
+## 13. Review-findings disposition (3-agent review, 2026-07-03)
+
+| Finding | Disposition |
+|---|---|
+| Physics Blocker-1: `frictionStatic` combines as MAX (dead numbers) | **Moot** — friction cut from scope. |
+| Physics Blocker-2: road thickness breaks kinematic reposition | **Avoided** — road thickness unchanged; beam thickness is render-only. |
+| Physics Major-3: high snapThreshold decouples stress glow | **Accepted** — §6 caveat, low priority. |
+| Physics Major-4: `type→category` not a blanket sweep | **Moot** — `type` kept, no rename. |
+| Physics Minor-6: `updateBeamMaterial` mutates registry | **Adopted** — §9 immutability rule. |
+| Fit Blocker-1: `level.materials` shape collision | **Avoided** — registry holds tuning; no per-level id-list. |
+| Fit Blocker-2: save/load persists `type` | **Adopted** — §8 persist `id` + shim + version. |
+| Fit Major-3: missed `.type`/render touch-points (GhostBeam etc.) | **Adopted** — §6 lists GhostBeam; `type` kept so most are no-ops. |
+| Fit Major-4/5/6: budget plumbing + test fallout | **Adopted** — §5, §10 enumerate. |
+| Fit Minor-7: CSV positional desync | **Adopted** — §11 append-at-end. |
+| Design M1: gate materials per module | **Overridden by user** — all available from start. |
+| Design M2: bind tutorial cards + skid FX | **Moot** — friction/grip out of scope. |
+| Design M3: cut Tar/Cable, trim lineup | **Adopted & extended** — user set 3 roads + 3 beams. |
+| Design M4: authoring combinatorics | **Reduced** — 3+3, no size-explosion vs. the 5+5 concern. |
+| Design m5: rename Girder | **Moot** — Girder/I-Beam not in the final set. |
+
+## 14. Phasing
+
+1. **Registry + adapters** — `materials.js`, `roadMat`/`woodMat` adapters, prebuilt/material
+   resolution by id. Keep `type`. Unit-test registry + back-compat (12 levels unchanged).
+2. **Budget unification** — single `_budget`, `_freshBudget`/`_prebuiltCost`/`expandPrebuilt`,
+   `RAW_LEVELS` + CSV `budget_total` migration, BudgetChip/TopBar single chip, tests.
+3. **Rendering** — `visual` motifs drive deck/beam/debris/ghost; motif primitives.
+4. **Submenu UI** — `MaterialSubmenu.js`, bus events, toolbar toggle, size row after, teardown.
+5. **Save/load migration** — persist `id`, legacy shim, version bump, tests.
+
+Each phase ends with `npm test`; phases 3–4 also need `npm run dev` play-through.
