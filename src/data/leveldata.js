@@ -92,14 +92,12 @@ function level(def) {
 // ── Phase 1 — Tutorials ─────────────────────────────────────────────────────
 
 export const L01 = level({
-  id: 'L01', title: 'Make It Reach', phase: 'tutorial',
+  id: 'L01', title: 'Structures', phase: 'tutorial',
   span: 1.6, budget: { road: 8 }, stressGlow: false,
   terrain: terrainPair(560, 720),
   anchors: spanAnchors(560, 720),
-  // Convoy: three cars cross in sequence (matches gdd/levels.csv seed).
+  // A single car crosses the first bridge (matches gdd/levels.csv seed).
   vehicles: [
-    { type: 'car', spawnAt: 'left' },
-    { type: 'car', spawnAt: 'left' },
     { type: 'car', spawnAt: 'left' },
   ],
   materials: { road: roadMat(['L']) },
@@ -114,7 +112,7 @@ export const L01 = level({
 // NOTE: vehicles[].design is consumed by resolveVehicleDesign() (implemented in a later plan task).
 // Until that lands, the field is data-only and has no runtime effect.
 export const L02 = level({
-  id: 'L02', title: 'Try Again!', phase: 'tutorial',
+  id: 'L02', title: 'Support', phase: 'tutorial',
   span: 3.2, budget: { road: 40, wood: 16 }, stressGlow: false,
   terrain: terrainPair(480, 800),
   anchors: spanAnchors(480, 800),
@@ -131,7 +129,7 @@ export const L02 = level({
 });
 
 export const L03 = level({
-  id: 'L03', title: "Builder's Tools", phase: 'tutorial',
+  id: 'L03', title: 'Rebuild', phase: 'tutorial',
   span: 3.2, budget: { road: 36, wood: 24 }, stressGlow: false,
   terrain: terrainPair(480, 800),
   anchors: spanAnchors(480, 800),
@@ -159,12 +157,12 @@ export const L03 = level({
 // ── Phase 2 — Topic levels ──────────────────────────────────────────────────
 
 export const L04 = level({
-  id: 'L04', title: 'Gravity Pulls Down', phase: 'topic',
+  id: 'L04', title: 'Gravity', phase: 'topic',
   span: 4.4, budget: { road: 22, wood: 14 },
   terrain: terrainPair(420, 860),
   anchors: spanAnchors(420, 860),
   rocks: [pillar('P1', 640, 530)],
-  vehicles: [{ type: 'car', spawnAt: 'left' }],
+  vehicles: [{ type: 'truck', spawnAt: 'left' }],
   materials: { road: roadMat(), wood: woodMat() },
   ui: { vehicleSelect: false },
   tutorial: {
@@ -215,7 +213,7 @@ export const L06 = level({
   terrain: terrainPair(400, 880),
   anchors: spanAnchors(400, 880),
   rocks: [pillar('P1', 640, 490)],
-  vehicles: [{ type: 'car', spawnAt: 'left' }],
+  vehicles: [{ type: 'truck', spawnAt: 'left' }],
   // Anti-bypass: only L-size road (no cheap re-segmenting), wood for diagonals.
   materials: { road: roadMat(['L']), wood: woodMat(['S', 'M', 'L']) },
   ui: { vehicleSelect: false },

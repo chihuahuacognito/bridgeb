@@ -3,8 +3,6 @@
 export const LEVEL_OVERRIDES = {
   "L01": {
     "vehicles": [
-      "car",
-      "car",
       "car"
     ],
     "spawnAt": "left",
@@ -31,7 +29,7 @@ export const LEVEL_OVERRIDES = {
   },
   "L02": {
     "vehicles": [
-      "car"
+      "truck"
     ],
     "spawnAt": "left",
     "budget": {
@@ -102,7 +100,7 @@ export const LEVEL_OVERRIDES = {
   },
   "L04": {
     "vehicles": [
-      "car"
+      "truck"
     ],
     "spawnAt": "left",
     "budget": {
@@ -172,7 +170,7 @@ export const LEVEL_OVERRIDES = {
   },
   "L06": {
     "vehicles": [
-      "car"
+      "truck"
     ],
     "spawnAt": "left",
     "budget": {

@@ -3,7 +3,6 @@
 // engineering "lab"; each app tile carries a slice of its own world. Bridge
 // Builder's own screens use its bright in-game world (sky + water). Rocket and
 // Farm are shown as "in construction" until their games exist.
-import { assets } from '../../systems/assets.js';
 
 export const FONT_DISPLAY = 'Fredoka';
 export const FONT_BODY = 'Nunito';
@@ -22,7 +21,7 @@ export const T = {
   phase: { tutorial: 0x3fd07a, topic: 0x3fa9f5, challenge: 0x9b7bff },
 };
 
-export const PHASE_LABEL = { tutorial: 'LEARN', topic: 'DISCOVER', challenge: 'PROVE IT' };
+export const PHASE_LABEL = { tutorial: 'PLAY', topic: 'DISCOVER', challenge: 'PROVE IT' };
 
 const RADIUS = 18;
 const BEVEL = 10;
@@ -60,18 +59,16 @@ export function drawHub(scene) {
   v.fillStyle(0x05101f, 0.40); v.fillRect(0, H - 80, W, 80);
 }
 
-// Bridge Builder world backdrop: the bright in-game painted scene, dimmed and
-// vignetted so the bricks/text read on top. Falls back to a sky/water gradient.
+// Bridge Builder world backdrop: a plain engineering-blue field (no in-game
+// scene) so the menu reads as its own space. The color is picked so that, after
+// the legibility overlay below, brick/text contrast matches the old backdrop.
+const WORLD_BG = 0x24557f; // calm blueprint blue
 export function drawWorld(scene) {
   const W = scene.scale.width, H = scene.scale.height;
-  scene.cameras.main.setBackgroundColor('#5dbff0');
-  if (scene.textures.exists('background') && assets.has('background')) {
-    scene.add.image(0, 0, 'background').setOrigin(0, 0).setDisplaySize(W, H).setDepth(-100);
-  } else {
-    const g = scene.add.graphics().setDepth(-100);
-    g.fillGradientStyle(0x7ec8f5, 0x7ec8f5, 0x2f7fc4, 0x2f7fc4, 1);
-    g.fillRect(0, 0, W, H);
-  }
+  scene.cameras.main.setBackgroundColor(hex(WORLD_BG));
+  const bg = scene.add.graphics().setDepth(-100);
+  bg.fillStyle(WORLD_BG, 1);
+  bg.fillRect(0, 0, W, H);
   // Legibility overlay: gentle global dim + a stronger top band under the title.
   const o = scene.add.graphics().setDepth(-90);
   o.fillStyle(0x0a1f3a, 0.34); o.fillRect(0, 0, W, H);

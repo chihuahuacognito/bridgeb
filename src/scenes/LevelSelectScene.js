@@ -1,6 +1,6 @@
 // src/scenes/LevelSelectScene.js
 // Per-module level picker. Receives { moduleId } and renders that module's four
-// levels as bricks. Phase (LEARN / DISCOVER / PROVE IT) shows as a small tag so
+// levels as bricks. Phase (PLAY / DISCOVER / PROVE IT) shows as a small tag so
 // mixed-phase modules read cleanly. Generalized from the former flat MenuScene.
 import Phaser from 'phaser';
 import { ALL_LEVELS, MODULES, MODULE_ORDER, menuEntries } from '../data/leveldata.js';

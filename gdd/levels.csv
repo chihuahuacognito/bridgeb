@@ -1,10 +1,10 @@
 id,vehicles,spawn_at,convoy_gap_ms,budget_road,budget_wood,road_sizes,wood_sizes,tools,span,gravity_y,gravity_label,vehicle_select,delete,budget_meter,stress_glow
-L01,car;car;car,left,,8,,L,,road,1.6,1.5,Normal,FALSE,FALSE,FALSE,FALSE
-L02,car,left,,40,16,M;L,M;L,road;beam,3.2,1.5,Normal,FALSE,FALSE,FALSE,FALSE
+L01,car,left,,8,,L,,road,1.6,1.5,Normal,FALSE,FALSE,FALSE,FALSE
+L02,truck,left,,40,16,M;L,M;L,road;beam,3.2,1.5,Normal,FALSE,FALSE,FALSE,FALSE
 L03,car,left,,36,24,S;M;L;XL,S;M;L;XL,,3.2,1.5,Normal,FALSE,,,FALSE
-L04,car,left,,22,14,S;M;L;XL,S;M;L;XL,,4.4,1.5,Normal,FALSE,,,
+L04,truck,left,,22,14,S;M;L;XL,S;M;L;XL,,4.4,1.5,Normal,FALSE,,,
 L05,truck,left,,20,12,S;M;L;XL,S;M;L;XL,beam,4.4,1.5,Normal,FALSE,,,
-L06,car,left,,23,15,L,S;M;L,,4.8,1.5,Normal,FALSE,,,
+L06,truck,left,,23,15,L,S;M;L,,4.8,1.5,Normal,FALSE,,,
 L07,car,left,,36,24,S;M;L;XL,S;M;L;XL,,5.6,1.5,Normal,FALSE,,,
 L08,truck,left,,33,22,S;M;L;XL,S;M;L;XL,,4,1.5,Normal,FALSE,,,
 L09,car,left,,13,9,S;M;L;XL,S;M;L;XL,,4,1.5,Normal,FALSE,,,

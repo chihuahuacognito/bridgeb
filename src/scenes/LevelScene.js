@@ -1312,6 +1312,7 @@ export class LevelScene extends Phaser.Scene {
     const p = this._cheatParams;
     const gui = new GUI({ width: 280, title: 'Cheat Panel' });
     this._gui = gui;
+    gui.close();
 
     const veh = gui.addFolder('Vehicle  (takes effect at next TEST)');
     this._guiWeightCtrl = veh.add(p, 'weight',       1, 10, 1).name('Weight');
