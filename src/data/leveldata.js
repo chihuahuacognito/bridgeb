@@ -5,26 +5,27 @@
 // with gdd/*.csv overrides (see docs/superpowers/specs/2026-06-28-convoy-and-csv-levels-design.md).
 import { mergeLevelKnobs } from './levelKnobs.js';
 import { LEVEL_OVERRIDES } from './levelOverrides.generated.js';
+import { MATERIALS, cloneMaterial, blocksFor } from './materials.js';
 
 // Visible water surface (matches the painted `background` asset's waterline, not
 // the world floor). Splash, sink-fade and debris cull all key off this. Tune in-app.
 const WATER_Y = 550;
-const BLOCK_LEN  = { S: 40, M: 80, L: 160, XL: 240 };
-const ROAD_COST  = { S: 2,  M: 4,  L: 8,   XL: 12 };
-const WOOD_COST  = { S: 1,  M: 2,  L: 4,   XL: 6 };
 
-function roadMat(sizes = ['S', 'M', 'L', 'XL']) {
-  return {
-    type: 'road', cost: 2, stiffness: 0.08, snapThreshold: 0.025,
-    blocks: Object.fromEntries(sizes.map(s => [s, { length: BLOCK_LEN[s], cost: ROAD_COST[s] }])),
-  };
+// The default road/beam materials come from the shared registry (materials.js).
+// With no size subset a level shares the registry entry directly; with a subset
+// it gets a clone whose block table is rebuilt for those sizes.
+function roadMat(sizes) {
+  if (!sizes) return MATERIALS.asphalt;
+  const m = cloneMaterial(MATERIALS.asphalt);
+  m.blocks = blocksFor('road', sizes);
+  return m;
 }
 
-function woodMat(sizes = ['S', 'M', 'L', 'XL']) {
-  return {
-    type: 'beam', cost: 1, stiffness: 0.15, snapThreshold: 0.18,
-    blocks: Object.fromEntries(sizes.map(s => [s, { length: BLOCK_LEN[s], cost: WOOD_COST[s] }])),
-  };
+function woodMat(sizes) {
+  if (!sizes) return MATERIALS.wood;
+  const m = cloneMaterial(MATERIALS.wood);
+  m.blocks = blocksFor('beam', sizes);
+  return m;
 }
 
 // Canyon walls flanking a gap. Edge x positions are where the anchors sit.
